@@ -1,0 +1,1809 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>IPO Ledger</title>
+<meta name="theme-color" content="#12161c" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f5f3ee" media="(prefers-color-scheme: light)">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="IPO Ledger">
+<link rel="apple-touch-icon" href="data:image/png;base64,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">
+<link rel="icon" type="image/png" sizes="192x192" href="data:image/png;base64,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">
+<link rel="icon" type="image/png" sizes="512x512" href="data:image/png;base64,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">
+<link rel="manifest" id="pwa-manifest-link" href="about:blank">
+<style>
+:root{
+  --bg:#12161c; --bg-alt:#0d1015;
+  --card:#1b2129; --card-hi:#212934;
+  --line:#2a323d;
+  --ink:#edeae3; --ink-dim:#a3aab5; --ink-faint:#6b7280;
+  --gold:#c9a24b; --gold-dim:#8a7038;
+  --green:#3f8f6f; --green-bg:#1a2b24;
+  --rust:#b5524a; --rust-bg:#2b1c1b;
+  --blue:#4b7fb5; --blue-bg:#1b2530;
+  --radius:10px;
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, Helvetica, Arial, sans-serif;
+  box-sizing:border-box;
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+@media (prefers-color-scheme: light){
+  :root:not([data-theme="dark"]){
+    --bg:#f5f3ee; --bg-alt:#ffffff;
+    --card:#ffffff; --card-hi:#faf8f3;
+    --line:#e2ddd0;
+    --ink:#1c1b18; --ink-dim:#5c574c; --ink-faint:#948d7c;
+    --gold:#a3792f; --gold-dim:#c9a24b;
+    --green:#2f7a5a; --green-bg:#e3efe9;
+    --rust:#a1443c; --rust-bg:#f5e5e3;
+    --blue:#3a6693; --blue-bg:#e5edf5;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#12161c; --bg-alt:#0d1015; --card:#1b2129; --card-hi:#212934; --line:#2a323d;
+  --ink:#edeae3; --ink-dim:#a3aab5; --ink-faint:#6b7280;
+}
+html{ scroll-padding-top: env(safe-area-inset-top, 0px); height:100%; }
+*{ box-sizing:border-box; }
+body{
+  margin:0; font-family:var(--font); background:var(--bg); color:var(--ink);
+  height:100%; -webkit-font-smoothing:antialiased;
+}
+.tabular{ font-variant-numeric: tabular-nums; font-feature-settings:"tnum"; }
+button{ font-family:inherit; }
+input, select{ font-family:inherit; }
+
+/* ---------- shell ---------- */
+#app{ display:flex; min-height:100%; }
+.rail{
+  width:220px; flex-shrink:0; background:var(--bg-alt); border-right:1px solid var(--line);
+  display:flex; flex-direction:column; padding:20px 12px;
+  position:sticky; top:0; height:100vh; height:100dvh;
+}
+.brand{ display:flex; align-items:center; gap:10px; padding:8px 10px 22px; }
+.brand .mark{ width:26px; height:26px; border-radius:6px; background:linear-gradient(135deg,var(--gold),var(--gold-dim)); flex-shrink:0; }
+.brand .name{ font-size:15px; font-weight:600; letter-spacing:.2px; }
+.brand .sub{ font-size:11px; color:var(--ink-faint); }
+nav.navlist{ display:flex; flex-direction:column; gap:2px; }
+nav.navlist button{
+  display:flex; align-items:center; gap:10px; text-align:left; background:none; border:none;
+  color:var(--ink-dim); padding:9px 10px; border-radius:8px; cursor:pointer; font-size:13.5px;
+}
+nav.navlist button svg{ width:17px; height:17px; flex-shrink:0; opacity:.85; }
+nav.navlist button:hover{ background:var(--card); color:var(--ink); }
+nav.navlist button.active{ background:var(--card-hi); color:var(--ink); box-shadow:inset 2px 0 0 var(--gold); }
+.rail-foot{ margin-top:auto; display:flex; flex-direction:column; gap:6px; }
+.rail-foot button{ background:none; border:1px solid var(--line); color:var(--ink-dim); font-size:12px; padding:8px; border-radius:8px; cursor:pointer; }
+.rail-foot button:hover{ color:var(--ink); border-color:var(--ink-faint); }
+
+main{ flex:1; min-width:0; padding:26px 30px 90px; max-width:900px; }
+.page-title{ font-size:20px; font-weight:600; margin:0 0 4px; }
+.page-sub{ font-size:13px; color:var(--ink-faint); margin:0 0 22px; }
+
+/* bottom tab bar (mobile) */
+.tabbar{ display:none; }
+
+@media (max-width: 760px){
+  .rail{ display:none; }
+  #app{ flex-direction:column; }
+  main{ padding:16px 14px 90px; max-width:100%; }
+  .tabbar{
+    display:flex; position:fixed; left:0; right:0; bottom:0; z-index:40;
+    background:var(--bg-alt); border-top:1px solid var(--line);
+    padding:6px 4px calc(6px + env(safe-area-inset-bottom,0px));
+    justify-content:space-around;
+  }
+  .tabbar button{ background:none;border:none;color:var(--ink-faint);display:flex;flex-direction:column;align-items:center;gap:2px;font-size:10px;padding:4px 6px;cursor:pointer; }
+  .tabbar button svg{ width:19px;height:19px; }
+  .tabbar button.active{ color:var(--gold); }
+}
+
+/* ---------- primitives ---------- */
+.card{ background:var(--card); border:1px solid var(--line); border-radius:var(--radius); padding:16px; }
+.grid{ display:grid; gap:12px; }
+.grid.cols-2{ grid-template-columns:1fr 1fr; }
+.grid.cols-3{ grid-template-columns:repeat(3,1fr); }
+.grid.cols-4{ grid-template-columns:repeat(4,1fr); }
+@media (max-width:640px){ .grid.cols-2,.grid.cols-3,.grid.cols-4{ grid-template-columns:1fr 1fr; } }
+
+.stat{ background:var(--card); border:1px solid var(--line); border-radius:var(--radius); padding:14px 16px; }
+.stat .label{ font-size:11.5px; color:var(--ink-faint); margin-bottom:6px; }
+.stat .value{ font-size:22px; font-weight:650; }
+.stat .value.pos{ color:var(--green); }
+.stat .value.neg{ color:var(--rust); }
+.stat .value.gold{ color:var(--gold); }
+
+.btn{ display:inline-flex; align-items:center; justify-content:center; gap:8px; border:none; border-radius:8px; padding:10px 16px; font-size:13.5px; font-weight:600; cursor:pointer; background:var(--card-hi); color:var(--ink); border:1px solid var(--line); }
+.btn:hover{ border-color:var(--ink-faint); }
+.btn.primary{ background:var(--gold); color:#1b1404; border-color:var(--gold); }
+.btn.primary:hover{ filter:brightness(1.08); }
+.btn.primary:disabled{ background:var(--line); color:var(--ink-faint); cursor:not-allowed; border-color:var(--line); }
+.btn.danger{ color:var(--rust); border-color:var(--rust); background:none; }
+.btn.ghost{ background:none; border-color:var(--line); }
+.btn.block{ width:100%; padding:14px; font-size:14.5px; }
+.btn.sm{ padding:6px 10px; font-size:12px; }
+
+input[type=text], input[type=number], input[type=date], select, textarea{
+  background:var(--bg-alt); border:1px solid var(--line); color:var(--ink); border-radius:8px; padding:9px 11px; font-size:13.5px; width:100%;
+}
+input:focus, select:focus, textarea:focus, button:focus-visible{ outline:2px solid var(--gold); outline-offset:1px; }
+label.field{ display:flex; flex-direction:column; gap:5px; font-size:12px; color:var(--ink-dim); }
+
+.chip{ display:inline-flex; align-items:center; gap:6px; padding:8px 14px; border-radius:20px; border:1px solid var(--line); background:var(--bg-alt); color:var(--ink-dim); font-size:13px; cursor:pointer; }
+.chip.selected{ background:var(--gold); border-color:var(--gold); color:#1b1404; font-weight:600; }
+
+.badge{ display:inline-flex; align-items:center; gap:4px; padding:3px 9px; border-radius:20px; font-size:11px; font-weight:600; }
+.badge.open{ background:var(--green-bg); color:var(--green); }
+.badge.closing{ background:var(--rust-bg); color:var(--rust); }
+.badge.upcoming{ background:var(--blue-bg); color:var(--blue); }
+.badge.closed{ background:var(--line); color:var(--ink-faint); }
+.badge.allot{ background:var(--gold-dim); color:#f5e6c4; }
+.badge.listed{ background:var(--green-bg); color:var(--green); }
+
+.section-label{ font-size:11px; text-transform:none; color:var(--ink-faint); margin:22px 0 10px; font-weight:600; letter-spacing:.2px; }
+.section-label:first-child{ margin-top:0; }
+
+.row{ display:flex; align-items:center; justify-content:space-between; gap:10px; }
+.hr{ height:1px; background:var(--line); border:none; margin:14px 0; }
+
+.check{ display:flex; align-items:center; gap:12px; padding:12px 4px; border-bottom:1px solid var(--line); cursor:pointer; }
+.check:last-child{ border-bottom:none; }
+.check .box{ width:20px;height:20px;border-radius:6px;border:1.5px solid var(--ink-faint); flex-shrink:0; display:flex;align-items:center;justify-content:center; }
+.check.on .box{ background:var(--gold); border-color:var(--gold); }
+.check.disabled{ opacity:.5; cursor:not-allowed; }
+.check .name{ flex:1; font-size:14px; }
+.check .tag{ font-size:11px; color:var(--ink-faint); }
+
+.searchbox{ position:relative; }
+.searchdrop{ position:absolute; top:calc(100% + 4px); left:0; right:0; background:var(--card-hi); border:1px solid var(--line); border-radius:8px; max-height:260px; overflow-y:auto; z-index:20; box-shadow:0 8px 24px rgba(0,0,0,.3); }
+.searchdrop .opt{ padding:10px 12px; cursor:pointer; font-size:13.5px; border-bottom:1px solid var(--line); }
+.searchdrop .opt:last-child{ border-bottom:none; }
+.searchdrop .opt:hover, .searchdrop .opt.hi{ background:var(--card); }
+.searchdrop .opt .sub{ font-size:11px; color:var(--ink-faint); margin-top:2px; }
+.searchdrop .empty{ padding:14px; font-size:13px; color:var(--ink-faint); text-align:center; }
+
+.empty-state{ text-align:center; padding:50px 20px; color:var(--ink-faint); }
+.empty-state svg{ width:36px;height:36px; margin-bottom:12px; opacity:.5; }
+.empty-state .t{ font-size:14px; color:var(--ink-dim); margin-bottom:4px; }
+.empty-state .s{ font-size:12.5px; }
+
+.modal-bg{ position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:100; display:flex; align-items:flex-end; justify-content:center; }
+@media (min-width:600px){ .modal-bg{ align-items:center; } }
+.modal{ background:var(--card-hi); border:1px solid var(--line); border-radius:16px 16px 0 0; padding:22px; width:100%; max-width:440px; max-height:88vh; overflow-y:auto; }
+@media (min-width:600px){ .modal{ border-radius:14px; } }
+.modal h3{ margin:0 0 16px; font-size:16px; }
+.modal-actions{ display:flex; gap:10px; margin-top:18px; }
+.modal-actions .btn{ flex:1; }
+
+.toast{ position:fixed; bottom:24px; left:50%; transform:translateX(-50%); background:var(--card-hi); border:1px solid var(--gold); color:var(--ink); padding:12px 20px; border-radius:10px; font-size:13.5px; z-index:200; box-shadow:0 8px 24px rgba(0,0,0,.4); }
+@media (max-width:760px){ .toast{ bottom:76px; } }
+
+.list-item{ display:flex; align-items:center; justify-content:space-between; padding:13px 4px; border-bottom:1px solid var(--line); gap:10px; }
+.list-item:last-child{ border-bottom:none; }
+.list-item .main{ min-width:0; }
+.list-item .title{ font-size:14px; font-weight:600; }
+.list-item .meta{ font-size:12px; color:var(--ink-faint); margin-top:2px; }
+.list-item .actions{ display:flex; gap:6px; flex-shrink:0; }
+.iconbtn{ background:none; border:none; color:var(--ink-faint); cursor:pointer; padding:6px; border-radius:6px; display:flex; }
+.iconbtn:hover{ color:var(--ink); background:var(--card); }
+.iconbtn svg{ width:16px;height:16px; }
+
+a.link{ color:var(--gold); text-decoration:none; }
+a.link:hover{ text-decoration:underline; }
+
+.money{ font-weight:600; }
+.money.plus{ color:var(--green); }
+.money.minus{ color:var(--rust); }
+
+.ipo-hero{ background:linear-gradient(135deg, var(--card-hi), var(--card)); border:1px solid var(--line); border-radius:12px; padding:18px; }
+.ipo-hero .name{ font-size:17px; font-weight:650; margin-bottom:2px; }
+.ipo-hero .company{ font-size:12.5px; color:var(--ink-faint); margin-bottom:12px; }
+.ipo-hero .facts{ display:flex; flex-wrap:wrap; gap:16px; font-size:12.5px; }
+.ipo-hero .facts .f b{ display:block; font-size:13.5px; color:var(--ink); }
+.ipo-hero .facts .f span{ color:var(--ink-faint); }
+
+.bankcard{ border:1px solid var(--line); border-radius:10px; padding:14px; cursor:pointer; background:var(--bg-alt); }
+.bankcard.selected{ border-color:var(--gold); background:var(--card-hi); }
+.bankcard .bn{ font-weight:600; font-size:14px; }
+.bankcard .bb{ font-size:12px; color:var(--ink-faint); margin-top:4px; }
+
+.pill-tabs{ display:flex; gap:6px; margin-bottom:16px; overflow-x:auto; }
+.pill-tabs button{ background:none; border:1px solid var(--line); color:var(--ink-dim); padding:7px 14px; border-radius:20px; font-size:12.5px; cursor:pointer; white-space:nowrap; }
+.pill-tabs button.active{ background:var(--card-hi); color:var(--ink); border-color:var(--ink-faint); }
+
+::-webkit-scrollbar{ width:8px; height:8px; }
+::-webkit-scrollbar-thumb{ background:var(--line); border-radius:4px; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="modal-root"></div>
+<div id="toast-root"></div>
+<script>
+/* =========================================================
+   IPO LEDGER — single-file app
+   Storage: IndexedDB (offline persistent)
+   ========================================================= */
+
+/* ---------- ICONS (tiny inline svg set) ---------- */
+const ICONS = {
+  list: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 6h13M8 12h13M8 18h13"/><path d="M3 6h.01M3 12h.01M3 18h.01"/></svg>`,
+  dashboard: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="3" width="8" height="5" rx="1.5"/><rect x="13" y="12" width="8" height="9" rx="1.5"/><rect x="3" y="13" width="8" height="8" rx="1.5"/></svg>`,
+  apply: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 12l2 2 4-4"/><rect x="3" y="3" width="18" height="18" rx="3"/></svg>`,
+  ipo: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 19h16M4 15l4-5 4 3 5-7"/></svg>`,
+  bank: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 10l9-6 9 6M5 10v9M19 10v9M9 19v-6M15 19v-6M3 19h18"/></svg>`,
+  people: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="9" cy="8" r="3.2"/><path d="M2.5 20c.6-4 3-6 6.5-6s5.9 2 6.5 6"/><circle cx="17.5" cy="9" r="2.4"/><path d="M15.5 13.2c2.6.3 4.3 2 4.8 4.8"/></svg>`,
+  transfer: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 8h13M13 4l4 4-4 4M20 16H7M11 12l-4 4 4 4"/></svg>`,
+  profit: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 17l6-6 4 4 8-8M15 6h6v6"/></svg>`,
+  history: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/><path d="M12 8v4l3 2"/></svg>`,
+  settings: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 13.5a1.7 1.7 0 000 3l.1.1a2 2 0 01-2.6 2.6l-.1-.1a1.7 1.7 0 00-3 0v.1a2 2 0 01-4 0v-.2a1.7 1.7 0 00-3-.1l-.1.1a2 2 0 01-2.6-2.6l.1-.1a1.7 1.7 0 000-3H4a2 2 0 010-4h.1a1.7 1.7 0 001-3.1l-.1-.1a2 2 0 012.6-2.6l.1.1a1.7 1.7 0 003 0V4a2 2 0 014 0v.1a1.7 1.7 0 003 1.1l.1-.1a2 2 0 012.6 2.6l-.1.1a1.7 1.7 0 00-1 3.1v.1a1.7 1.7 0 001.6 1z"/></svg>`,
+  search: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/></svg>`,
+  plus: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>`,
+  edit: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z"/></svg>`,
+  trash: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 6h18M8 6V4h8v2M6 6l1 15h10l1-15"/></svg>`,
+  x: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>`,
+  check: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M4 12l5 5L20 6"/></svg>`,
+  external: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 4h6v6M20 4l-9 9M9 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-3"/></svg>`,
+  download: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 20h16"/></svg>`,
+  upload: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 21V9m0 0l-4 4m4-4l4 4M4 4h16"/></svg>`,
+};
+
+/* ---------- PWA: manifest + service worker (installable / add to home screen) ---------- */
+(function setupPWA(){
+  try{
+    const ICON192 = document.querySelector('link[rel="apple-touch-icon"]').getAttribute('href');
+    const ICON512 = document.querySelector('link[sizes="512x512"]').getAttribute('href');
+    const manifest = {
+      name: "IPO Ledger",
+      short_name: "IPO Ledger",
+      description: "Money & IPO application tracker",
+      start_url: ".",
+      scope: ".",
+      display: "standalone",
+      background_color: "#12161c",
+      theme_color: "#12161c",
+      icons: [
+        { src: ICON192, sizes: "192x192", type: "image/png", purpose: "any maskable" },
+        { src: ICON512, sizes: "512x512", type: "image/png", purpose: "any maskable" }
+      ]
+    };
+    const blob = new Blob([JSON.stringify(manifest)], {type:'application/manifest+json'});
+    const manifestUrl = URL.createObjectURL(blob);
+    document.getElementById('pwa-manifest-link').setAttribute('href', manifestUrl);
+  }catch(e){ console.warn('PWA manifest setup failed', e); }
+
+  // Minimal offline-friendly service worker, registered from an in-memory blob.
+  // Some browsers restrict blob: service workers; failures here are non-fatal —
+  // the app still works fully, it just may not qualify for the full "Install" banner everywhere.
+  if('serviceWorker' in navigator){
+    try{
+      const swCode = `
+        self.addEventListener('install', e => self.skipWaiting());
+        self.addEventListener('activate', e => self.clients.claim());
+        self.addEventListener('fetch', e => {
+          e.respondWith(fetch(e.request).catch(()=> caches.match(e.request)));
+        });
+      `;
+      const swBlob = new Blob([swCode], {type:'text/javascript'});
+      const swUrl = URL.createObjectURL(swBlob);
+      navigator.serviceWorker.register(swUrl).catch(()=>{ /* silently ignore unsupported blob SW */ });
+    }catch(e){ /* ignore */ }
+  }
+})();
+
+/* ---------- DB LAYER (IndexedDB) ---------- */
+const DB_NAME = 'ipo_ledger_db';
+const DB_VERSION = 1;
+const STORES = ['banks','applicants','ipos','applications','transfers','sales','meta'];
+let db;
+
+function openDB(){
+  return new Promise((resolve,reject)=>{
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    req.onupgradeneeded = (e)=>{
+      const d = e.target.result;
+      if(!d.objectStoreNames.contains('banks')) d.createObjectStore('banks',{keyPath:'id'});
+      if(!d.objectStoreNames.contains('applicants')) d.createObjectStore('applicants',{keyPath:'id'});
+      if(!d.objectStoreNames.contains('ipos')) d.createObjectStore('ipos',{keyPath:'id'});
+      if(!d.objectStoreNames.contains('applications')) d.createObjectStore('applications',{keyPath:'id'});
+      if(!d.objectStoreNames.contains('transfers')) d.createObjectStore('transfers',{keyPath:'id'});
+      if(!d.objectStoreNames.contains('sales')) d.createObjectStore('sales',{keyPath:'id'});
+      if(!d.objectStoreNames.contains('meta')) d.createObjectStore('meta',{keyPath:'key'});
+    };
+    req.onsuccess = (e)=>{ resolve(e.target.result); };
+    req.onerror = (e)=>{ reject(e); };
+  });
+}
+
+function txStore(name, mode='readonly'){
+  const tx = db.transaction(name, mode);
+  return tx.objectStore(name);
+}
+function idbAll(store){
+  return new Promise((resolve,reject)=>{
+    const req = txStore(store).getAll();
+    req.onsuccess = ()=>resolve(req.result||[]);
+    req.onerror = reject;
+  });
+}
+function idbPut(store, obj){
+  return new Promise((resolve,reject)=>{
+    const req = txStore(store,'readwrite').put(obj);
+    req.onsuccess = ()=>resolve(obj);
+    req.onerror = reject;
+  });
+}
+function idbDelete(store, id){
+  return new Promise((resolve,reject)=>{
+    const req = txStore(store,'readwrite').delete(id);
+    req.onsuccess = ()=>resolve();
+    req.onerror = reject;
+  });
+}
+function idbClear(store){
+  return new Promise((resolve,reject)=>{
+    const req = txStore(store,'readwrite').clear();
+    req.onsuccess = ()=>resolve();
+    req.onerror = reject;
+  });
+}
+
+/* ---------- STATE ---------- */
+const State = {
+  banks: [], applicants: [], ipos: [], applications: [], transfers: [], sales: [],
+  route: 'dashboard',
+  applyFlow: { ipoId: null, bankId: null, selected: new Set() },
+};
+
+function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,8); }
+function todayStr(){ return new Date().toISOString().slice(0,10); }
+function fmtMoney(n){
+  n = Number(n)||0;
+  const neg = n<0; n = Math.abs(n);
+  const s = n.toLocaleString('en-IN', {maximumFractionDigits:0});
+  return (neg?'-':'')+'₹'+s;
+}
+function fmtDate(d){
+  if(!d) return '—';
+  const dt = new Date(d+'T00:00:00');
+  if(isNaN(dt)) return d;
+  return dt.toLocaleDateString('en-IN',{day:'2-digit',month:'short'});
+}
+function daysDiff(dateStr){
+  if(!dateStr) return null;
+  const today = new Date(todayStr()+'T00:00:00');
+  const d = new Date(dateStr+'T00:00:00');
+  return Math.round((d-today)/86400000);
+}
+function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+// Pull every number out of a price band string like "₹123–₹130" or "Rs. 32 - 34"
+// (handles –, —, - as separators and stray commas) and returns the highest one.
+function parseMaxPriceFromBand(band){
+  if(!band) return 0;
+  const nums = String(band).replace(/,/g,'').match(/\d+(\.\d+)?/g);
+  if(!nums || nums.length===0) return 0;
+  return Math.max(...nums.map(Number));
+}
+
+async function loadAll(){
+  [State.banks, State.applicants, State.ipos, State.applications, State.transfers, State.sales] =
+    await Promise.all([idbAll('banks'), idbAll('applicants'), idbAll('ipos'), idbAll('applications'), idbAll('transfers'), idbAll('sales')]);
+}
+
+/* ---------- DERIVED / COMPUTED ---------- */
+function bankById(id){ return State.banks.find(b=>b.id===id); }
+function applicantById(id){ return State.applicants.find(a=>a.id===id); }
+function ipoById(id){ return State.ipos.find(i=>i.id===id); }
+
+// Money movements affecting a bank: entered balance + transfers + applications (blocked) + refunds
+function bankLedger(bankId){
+  const bank = bankById(bankId);
+  if(!bank) return { entries:[], current:0 };
+  const entries = [];
+  entries.push({ date: bank.createdDate||todayStr(), label:'Opening balance', amount: bank.openingBalance||0, running:0 });
+
+  // transfers out/in
+  State.transfers.forEach(t=>{
+    if(t.fromBankId===bankId) entries.push({date:t.date, label:`Transfer to ${bankById(t.toBankId)?.name||'—'}`, amount:-t.amount});
+    if(t.toBankId===bankId) entries.push({date:t.date, label:`Transfer from ${bankById(t.fromBankId)?.name||'—'}`, amount:t.amount});
+  });
+
+  // applications: blocked amount leaves bank when applied; refund/unblock returns money
+  State.applications.filter(a=>a.bankId===bankId).forEach(a=>{
+    const ipo = ipoById(a.ipoId);
+    entries.push({ date:a.appliedDate, label:`${ipo?ipo.name:'IPO'} — applied (${applicantById(a.applicantId)?.name||'—'})`, amount:-(a.amount||0) });
+    const refunded = a.refundedAmount||0;
+    if(refunded>0){
+      entries.push({ date:a.refundDate||a.appliedDate, label:`${ipo?ipo.name:'IPO'} — refund/unblock (${applicantById(a.applicantId)?.name||'—'})`, amount:refunded });
+    }
+  });
+
+  entries.sort((x,y)=> (x.date||'').localeCompare(y.date||''));
+  let running = 0;
+  entries.forEach(e=>{ running += e.amount; e.running = running; });
+  return { entries, current: running };
+}
+
+function bankAvailable(bankId){
+  return bankLedger(bankId).current;
+}
+function bankBlocked(bankId){
+  // sum of applications on this bank not yet refunded (pending amount)
+  return State.applications.filter(a=>a.bankId===bankId).reduce((sum,a)=>{
+    const applied = a.amount||0;
+    const refunded = a.refundedAmount||0;
+    return sum + Math.max(0, applied - refunded);
+  },0);
+}
+
+function ipoStatus(ipo){
+  const openD = daysDiff(ipo.openDate);
+  const closeD = daysDiff(ipo.closeDate);
+  const allotD = daysDiff(ipo.allotmentDate);
+  const listD = daysDiff(ipo.listingDate);
+  if(listD!==null && listD<=0) return {key:'listed', label: listD===0?'Listing today':'Listed'};
+  if(listD===1) return {key:'listed', label:'Listing tomorrow'};
+  if(allotD!==null && allotD<=0) return {key:'allot', label: allotD===0?'Allotment today':'Allotment out'};
+  if(allotD===1) return {key:'allot', label:'Allotment tomorrow'};
+  if(closeD!==null && closeD<0) return {key:'closed', label:'Closed'};
+  if(closeD===0) return {key:'closing', label:'Closing today'};
+  if(closeD===1) return {key:'closing', label:'Closing tomorrow'};
+  if(openD!==null && openD<=0 && (closeD===null||closeD>=0)) return {key:'open', label:'Open now'};
+  if(openD===1) return {key:'upcoming', label:'Opens tomorrow'};
+  if(openD!==null && openD>1) return {key:'upcoming', label:`Opens in ${openD}d`};
+  return {key:'closed', label:'—'};
+}
+
+function ipoApplications(ipoId){ return State.applications.filter(a=>a.ipoId===ipoId); }
+function ipoLotAmount(ipo){
+  if(!ipo) return 0;
+  // Block price = (shares per lot) × (max price in the price band).
+  // Prefer the explicit maxPrice field, but fall back to parsing the price
+  // band text so an out-of-sync/blank maxPrice never silently zeroes this out.
+  const maxPrice = Number(ipo.maxPrice) || parseMaxPriceFromBand(ipo.priceBand) || 0;
+  const lot = Number(ipo.lotSize)||0;
+  return maxPrice*lot;
+}
+function ipoTotalApplied(ipoId){ return ipoApplications(ipoId).reduce((s,a)=>s+(a.amount||0),0); }
+function ipoTotalAllotted(ipoId){ return ipoApplications(ipoId).reduce((s,a)=>s+(a.allottedAmount||0),0); }
+function ipoTotalRefunded(ipoId){ return ipoApplications(ipoId).reduce((s,a)=>s+(a.refundedAmount||0),0); }
+function ipoTotalPending(ipoId){
+  return ipoApplications(ipoId).reduce((s,a)=>{
+    const applied=a.amount||0, allotted=a.allottedAmount||0, refunded=a.refundedAmount||0;
+    // pending = applied - allotted - refunded (money not yet resolved), floor 0
+    if(a.allotmentStatus==='pending') return s + Math.max(0, applied - refunded);
+    return s;
+  },0);
+}
+
+function totalBlockedAll(){
+  return State.banks.reduce((s,b)=>s+bankBlocked(b.id),0);
+}
+function totalRefundPendingAll(){
+  return State.applications.reduce((s,a)=>{
+    if(a.allotmentStatus==='pending') return s;
+    const applied=a.amount||0, allotted=a.allottedAmount||0, refunded=a.refundedAmount||0;
+    const owed = applied - allotted; // amount that should eventually be refunded
+    const stillPending = owed - refunded;
+    return s + Math.max(0, stillPending);
+  },0);
+}
+function totalProfitAll(){
+  return State.sales.reduce((s,sale)=> s + ((sale.saleAmount||0) - (sale.investment||0) - (sale.charges||0)), 0);
+}
+function totalMoneyInBanks(){
+  return State.banks.reduce((s,b)=>s+bankAvailable(b.id),0) + totalBlockedAll();
+  // "total money in tracked banks" = available + blocked (i.e. total capital across banks)
+}
+function activeApplicationsCount(){
+  return State.applications.filter(a=>{
+    const ipo = ipoById(a.ipoId);
+    if(!ipo) return false;
+    const st = ipoStatus(ipo).key;
+    return st!=='listed';
+  }).length;
+}
+function upcomingIposCount(){
+  return State.ipos.filter(i=> ipoStatus(i).key==='upcoming').length;
+}
+
+/* fuzzy-ish partial match: all chars of query appear in order, or substring match on name/company */
+function ipoMatches(ipo, q){
+  q = q.trim().toLowerCase();
+  if(!q) return true;
+  const hay = (ipo.name+' '+(ipo.company||'')).toLowerCase();
+  if(hay.includes(q)) return true;
+  // subsequence fuzzy match
+  let qi=0;
+  for(let i=0;i<hay.length && qi<q.length;i++){ if(hay[i]===q[qi]) qi++; }
+  return qi===q.length;
+}
+
+/* ---------- TOAST ---------- */
+function toast(msg){
+  const root = document.getElementById('toast-root');
+  root.innerHTML = `<div class="toast">${esc(msg)}</div>`;
+  clearTimeout(toast._t);
+  toast._t = setTimeout(()=>{ root.innerHTML=''; }, 2600);
+}
+
+/* ---------- MODAL ---------- */
+function closeModal(){ document.getElementById('modal-root').innerHTML=''; }
+function openModal(html){
+  document.getElementById('modal-root').innerHTML = `<div class="modal-bg" data-close="1">${html}</div>`;
+  document.querySelector('.modal-bg').addEventListener('click', (e)=>{ if(e.target.dataset.close) closeModal(); });
+}
+
+/* ---------- ROUTER / SHELL ---------- */
+const NAV = [
+  {key:'dashboard', label:'Dashboard', icon:'dashboard'},
+  {key:'apply', label:'Apply / Manage', icon:'apply'},
+  {key:'applications', label:'Applications', icon:'list'},
+  {key:'ipos', label:'IPOs', icon:'ipo'},
+  {key:'banks', label:'Banks', icon:'bank'},
+  {key:'applicants', label:'Applicants', icon:'people'},
+  {key:'transfers', label:'Transfers', icon:'transfer'},
+  {key:'profit', label:'Profit', icon:'profit'},
+  {key:'history', label:'History', icon:'history'},
+  {key:'settings', label:'Settings', icon:'settings'},
+];
+const NAV_MOBILE = ['dashboard','apply','applications','ipos','settings'];
+
+function go(route){ State.route = route; render(); window.scrollTo(0,0); }
+
+function renderShell(){
+  const app = document.getElementById('app');
+  app.innerHTML = `
+    <aside class="rail">
+      <div class="brand"><div class="mark"></div><div><div class="name">IPO Ledger</div><div class="sub">Money & application tracker</div></div></div>
+      <nav class="navlist">
+        ${NAV.map(n=>`<button data-route="${n.key}" class="${State.route===n.key?'active':''}">${ICONS[n.icon]}<span>${n.label}</span></button>`).join('')}
+      </nav>
+      <div class="rail-foot">
+        <button id="export-btn">${ICONS.download} Export backup</button>
+        <button id="import-btn">${ICONS.upload} Import backup</button>
+      </div>
+    </aside>
+    <main id="main"></main>
+    <div class="tabbar">
+      ${NAV_MOBILE.map(k=>{ const n=NAV.find(x=>x.key===k); return `<button data-route="${n.key}" class="${State.route===n.key?'active':''}">${ICONS[n.icon]}<span>${n.label.split(' ')[0]}</span></button>`; }).join('')}
+    </div>
+  `;
+  app.querySelectorAll('[data-route]').forEach(b=>b.addEventListener('click',()=>go(b.dataset.route)));
+  document.getElementById('export-btn').addEventListener('click', exportBackup);
+  document.getElementById('import-btn').addEventListener('click', triggerImport);
+}
+
+function render(){
+  renderShell();
+  const main = document.getElementById('main');
+  const renderers = {
+    dashboard: renderDashboard,
+    apply: renderApply,
+    applications: renderApplications,
+    ipos: renderIpos,
+    banks: renderBanks,
+    applicants: renderApplicants,
+    transfers: renderTransfers,
+    profit: renderProfit,
+    history: renderHistory,
+    settings: renderSettings,
+  };
+  (renderers[State.route]||renderDashboard)(main);
+}
+
+/* ---------- BACKUP ---------- */
+function exportBackup(){
+  const data = {
+    version:1, exportedAt:new Date().toISOString(),
+    banks:State.banks, applicants:State.applicants, ipos:State.ipos,
+    applications:State.applications, transfers:State.transfers, sales:State.sales,
+  };
+  const blob = new Blob([JSON.stringify(data,null,2)], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `ipo-ledger-backup-${todayStr()}.json`;
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+  toast('Backup exported');
+}
+function triggerImport(){
+  const input = document.createElement('input');
+  input.type='file'; input.accept='application/json';
+  input.addEventListener('change', async ()=>{
+    const file = input.files[0]; if(!file) return;
+    try{
+      const text = await file.text();
+      const data = JSON.parse(text);
+      openModal(`
+        <div class="modal">
+          <h3>Import backup?</h3>
+          <p style="font-size:13px;color:var(--ink-dim);margin:0 0 6px;">This will replace ALL current data with the contents of this file. This cannot be undone.</p>
+          <p style="font-size:12px;color:var(--ink-faint);">${(data.banks||[]).length} banks, ${(data.applicants||[]).length} applicants, ${(data.ipos||[]).length} IPOs, ${(data.applications||[]).length} applications.</p>
+          <div class="modal-actions">
+            <button class="btn ghost" data-close="1">Cancel</button>
+            <button class="btn primary" id="confirm-import">Replace all data</button>
+          </div>
+        </div>`);
+      document.getElementById('confirm-import').addEventListener('click', async ()=>{
+        for(const s of ['banks','applicants','ipos','applications','transfers','sales']) await idbClear(s);
+        for(const s of ['banks','applicants','ipos','applications','transfers','sales']){
+          for(const item of (data[s]||[])) await idbPut(s, item);
+        }
+        await loadAll();
+        closeModal(); toast('Backup imported'); render();
+      });
+    }catch(err){ toast('Invalid backup file'); }
+  });
+  input.click();
+}
+
+/* ==================== DASHBOARD ==================== */
+function renderDashboard(main){
+  const profit = totalProfitAll();
+  const totalMoney = totalMoneyInBanks();
+  const blocked = totalBlockedAll();
+  const refundPending = totalRefundPendingAll();
+  const activeApps = activeApplicationsCount();
+  const upcoming = upcomingIposCount();
+
+  // attention items
+  const attn = [];
+  State.ipos.forEach(ipo=>{
+    const st = ipoStatus(ipo);
+    const openD = daysDiff(ipo.openDate), closeD = daysDiff(ipo.closeDate), allotD = daysDiff(ipo.allotmentDate), listD = daysDiff(ipo.listingDate);
+    if(closeD===0) attn.push({dot:'🔴', text:`${ipo.name} — Closing today`, ipo});
+    else if(closeD===1) attn.push({dot:'🟡', text:`${ipo.name} — Closing tomorrow`, ipo});
+    if(allotD===0) attn.push({dot:'🟡', text:`${ipo.name} — Allotment today`, ipo});
+    else if(allotD===1) attn.push({dot:'🟡', text:`${ipo.name} — Allotment tomorrow`, ipo});
+    if(listD===0) attn.push({dot:'🔵', text:`${ipo.name} — Listing today`, ipo});
+    else if(listD===1) attn.push({dot:'🔵', text:`${ipo.name} — Listing tomorrow`, ipo});
+    if(openD===0) attn.push({dot:'🟢', text:`${ipo.name} — Opens today`, ipo});
+    else if(openD===1) attn.push({dot:'🟢', text:`${ipo.name} — Opens tomorrow`, ipo});
+    const pending = ipoTotalPending(ipo.id);
+    if(pending>0 && st.key==='listed') attn.push({dot:'🟡', text:`${ipo.name} — Refund pending (${fmtMoney(pending)})`, ipo});
+  });
+
+  const todayItems = attn.filter(a=>a.text.includes('today'));
+  const tmrItems = attn.filter(a=>a.text.includes('tomorrow'));
+  const otherItems = attn.filter(a=>!a.text.includes('today') && !a.text.includes('tomorrow'));
+
+  main.innerHTML = `
+    <h1 class="page-title">Dashboard</h1>
+    <p class="page-sub">Your IPO money at a glance</p>
+
+    <div class="grid cols-4">
+      <div class="stat"><div class="label">Total IPO profit</div><div class="value ${profit>=0?'pos':'neg'} tabular">${fmtMoney(profit)}</div></div>
+      <div class="stat"><div class="label">Total money in banks</div><div class="value gold tabular">${fmtMoney(totalMoney)}</div></div>
+      <div class="stat"><div class="label">Currently blocked</div><div class="value tabular">${fmtMoney(blocked)}</div></div>
+      <div class="stat"><div class="label">Refund pending</div><div class="value tabular">${fmtMoney(refundPending)}</div></div>
+    </div>
+    <div class="grid cols-2" style="margin-top:12px;">
+      <div class="stat"><div class="label">Active applications</div><div class="value tabular">${activeApps}</div></div>
+      <div class="stat"><div class="label">Upcoming IPOs</div><div class="value tabular">${upcoming}</div></div>
+    </div>
+
+    <div class="section-label">Needs attention</div>
+    ${attn.length===0 ? `<div class="empty-state"><div class="t">Nothing urgent</div><div class="s">Add IPOs to start tracking dates.</div></div>` : `
+      <div class="card">
+        ${todayItems.length? `<div style="font-size:11px;color:var(--ink-faint);margin-bottom:6px;">TODAY</div>` : ''}
+        ${todayItems.map(a=>attnRow(a)).join('')}
+        ${tmrItems.length? `<div style="font-size:11px;color:var(--ink-faint);margin:${todayItems.length?'14px':'0'} 0 6px;">TOMORROW</div>` : ''}
+        ${tmrItems.map(a=>attnRow(a)).join('')}
+        ${otherItems.length? `<div style="font-size:11px;color:var(--ink-faint);margin:${(todayItems.length||tmrItems.length)?'14px':'0'} 0 6px;">OTHER</div>` : ''}
+        ${otherItems.map(a=>attnRow(a)).join('')}
+      </div>
+    `}
+
+    <div class="section-label">Open now</div>
+    ${renderIpoStrip(State.ipos.filter(i=>ipoStatus(i).key==='open'))}
+  `;
+  main.querySelectorAll('[data-goto-ipo]').forEach(el=>el.addEventListener('click',()=>{
+    State.applyFlow = {ipoId: el.dataset.gotoIpo, bankId:null, selected:new Set()};
+    go('apply');
+  }));
+}
+function attnRow(a){
+  return `<div class="row" style="padding:8px 0;cursor:pointer;" data-goto-ipo="${a.ipo.id}">
+    <span style="font-size:13.5px;">${a.dot} ${esc(a.text)}</span>
+  </div>`;
+}
+function renderIpoStrip(list){
+  if(list.length===0) return `<div class="empty-state"><div class="t">No IPOs open right now</div></div>`;
+  return `<div class="grid cols-2">${list.map(ipo=>ipoCard(ipo)).join('')}</div>`;
+}
+function ipoCard(ipo){
+  const st = ipoStatus(ipo);
+  const applied = ipoTotalApplied(ipo.id);
+  return `<div class="card" style="cursor:pointer;" data-goto-ipo="${ipo.id}">
+    <div class="row" style="align-items:flex-start;">
+      <div style="min-width:0;">
+        <div style="font-weight:600;font-size:14px;">${esc(ipo.name)}</div>
+        <div style="font-size:11.5px;color:var(--ink-faint);margin-top:2px;">${fmtDate(ipo.openDate)} – ${fmtDate(ipo.closeDate)}</div>
+      </div>
+      <span class="badge ${st.key}">${st.label}</span>
+    </div>
+    ${applied>0?`<div style="margin-top:10px;font-size:12.5px;color:var(--ink-dim);">Applied: <b class="tabular">${fmtMoney(applied)}</b></div>`:''}
+  </div>`;
+}
+
+/* ==================== APPLY / MANAGE ==================== */
+function renderApply(main){
+  const flow = State.applyFlow;
+  const ipo = flow.ipoId ? ipoById(flow.ipoId) : null;
+
+  main.innerHTML = `
+    <h1 class="page-title">Apply / Manage IPO</h1>
+    <p class="page-sub">Select IPO → select bank → tick applicants → mark applied</p>
+
+    <div class="section-label">Select IPO</div>
+    <div class="searchbox">
+      <input type="text" id="ipo-search" placeholder="Search IPO by name..." autocomplete="off" value="${ipo?esc(ipo.name):''}">
+      <div id="ipo-dropdown"></div>
+    </div>
+
+    <div id="ipo-hero-slot" style="margin-top:14px;"></div>
+    <div id="bank-slot"></div>
+    <div id="applicant-slot"></div>
+  `;
+
+  const searchInput = document.getElementById('ipo-search');
+  const dropdown = document.getElementById('ipo-dropdown');
+
+  function showDropdown(q){
+    const matches = State.ipos.filter(i=>ipoMatches(i,q)).slice(0,12);
+    // sort: open first, then upcoming, then rest
+    matches.sort((a,b)=>{
+      const order = {open:0, closing:0, upcoming:1, allot:0, listed:2, closed:3};
+      return (order[ipoStatus(a).key]??4) - (order[ipoStatus(b).key]??4);
+    });
+    if(matches.length===0){
+      dropdown.innerHTML = `<div class="searchdrop"><div class="empty">No IPOs found. <a href="#" id="qa-new-ipo" class="link">Add "${esc(q)}" as new IPO</a></div></div>`;
+      dropdown.className='';
+      const link = document.getElementById('qa-new-ipo');
+      if(link) link.addEventListener('click',(e)=>{ e.preventDefault(); closeDropdown(); openIpoModal(null, q); });
+      return;
+    }
+    dropdown.innerHTML = `<div class="searchdrop">${matches.map(i=>`
+      <div class="opt" data-pick="${i.id}">
+        <div>${esc(i.name)}</div>
+        <div class="sub">${ipoStatus(i).label} · ${fmtDate(i.openDate)}–${fmtDate(i.closeDate)}</div>
+      </div>`).join('')}</div>`;
+    dropdown.querySelectorAll('[data-pick]').forEach(el=>el.addEventListener('click',()=>{
+      flow.ipoId = el.dataset.pick; flow.bankId=null; flow.selected=new Set();
+      closeDropdown();
+      searchInput.value = ipoById(flow.ipoId).name;
+      renderApplyDetails();
+    }));
+  }
+  function closeDropdown(){ dropdown.innerHTML=''; }
+
+  searchInput.addEventListener('focus', ()=> showDropdown(searchInput.value));
+  searchInput.addEventListener('input', ()=> showDropdown(searchInput.value));
+  document.addEventListener('click', function outside(e){
+    if(!e.target.closest('.searchbox')){ closeDropdown(); }
+  }, {once:true});
+
+  function renderApplyDetails(){
+    const heroSlot = document.getElementById('ipo-hero-slot');
+    const bankSlot = document.getElementById('bank-slot');
+    const applicantSlot = document.getElementById('applicant-slot');
+    const ipo = flow.ipoId ? ipoById(flow.ipoId) : null;
+
+    if(!ipo){ heroSlot.innerHTML=''; bankSlot.innerHTML=''; applicantSlot.innerHTML=''; return; }
+
+    const st = ipoStatus(ipo);
+    heroSlot.innerHTML = `
+      <div class="ipo-hero">
+        <div class="row" style="align-items:flex-start;">
+          <div>
+            <div class="name">${esc(ipo.name)}</div>
+            <div class="company">${esc(ipo.company||'')}</div>
+          </div>
+          <span class="badge ${st.key}">${st.label}</span>
+        </div>
+        <div class="facts">
+          <div class="f"><span>Open</span><b>${fmtDate(ipo.openDate)}</b></div>
+          <div class="f"><span>Close</span><b>${fmtDate(ipo.closeDate)}</b></div>
+          <div class="f"><span>Allotment</span><b>${fmtDate(ipo.allotmentDate)}</b></div>
+          <div class="f"><span>Listing</span><b>${fmtDate(ipo.listingDate)}</b></div>
+          <div class="f"><span>Lot size</span><b class="tabular">${ipo.lotSize?ipo.lotSize+' shares':'—'}</b></div>
+          <div class="f"><span>Amount per lot</span><b class="tabular">${ipoLotAmount(ipo)?fmtMoney(ipoLotAmount(ipo)):'—'}</b></div>
+        </div>
+      </div>
+    `;
+
+    if(State.banks.length===0){
+      bankSlot.innerHTML = `<div class="section-label">Select bank</div><div class="empty-state"><div class="t">No banks yet</div><div class="s">Add a bank in Settings/Banks first.</div></div>`;
+      applicantSlot.innerHTML='';
+      return;
+    }
+
+    bankSlot.innerHTML = `
+      <div class="section-label">Select bank</div>
+      <div class="grid cols-3">
+        ${State.banks.map(b=>{
+          const avail = bankAvailable(b.id);
+          return `<div class="bankcard ${flow.bankId===b.id?'selected':''}" data-bank="${b.id}">
+            <div class="bn">${esc(b.name)}</div>
+            <div class="bb tabular">Available: ${fmtMoney(avail)}</div>
+          </div>`;
+        }).join('')}
+      </div>
+    `;
+    bankSlot.querySelectorAll('[data-bank]').forEach(el=>el.addEventListener('click',()=>{
+      flow.bankId = el.dataset.bank; flow.selected = new Set();
+      renderApplyDetails();
+    }));
+
+    if(!flow.bankId){ applicantSlot.innerHTML=''; return; }
+
+    const bank = bankById(flow.bankId);
+    const avail = bankAvailable(bank.id);
+    const blocked = bankBlocked(bank.id);
+    const existingApps = State.applications.filter(a=>a.ipoId===ipo.id);
+
+    if(State.applicants.length===0){
+      applicantSlot.innerHTML = `<div class="section-label">Select applicants</div><div class="empty-state"><div class="t">No applicants yet</div><div class="s">Add applicants first.</div></div>`;
+      return;
+    }
+
+    applicantSlot.innerHTML = `
+      <div class="row" style="margin-top:22px;">
+        <div class="section-label" style="margin:0;">${esc(bank.name)}</div>
+        <div style="font-size:12px;color:var(--ink-faint);" class="tabular">Available ${fmtMoney(avail)} · Blocked ${fmtMoney(blocked)}</div>
+      </div>
+      <div class="card" style="padding:6px 12px;">
+        ${State.applicants.map(a=>{
+          const existing = existingApps.find(e=>e.applicantId===a.id);
+          const disabled = !!existing;
+          const on = flow.selected.has(a.id);
+          return `<div class="check ${on?'on':''} ${disabled?'disabled':''}" data-applicant="${a.id}" ${disabled?'':''}>
+            <div class="box">${on?ICONS.check:''}</div>
+            <div class="name">${esc(a.name)}</div>
+            ${existing ? `<span class="tag">✅ Applied — ${esc(bankById(existing.bankId)?.name||'')}</span>` : ''}
+          </div>`;
+        }).join('')}
+      </div>
+      <div id="apply-summary"></div>
+    `;
+    applicantSlot.querySelectorAll('.check:not(.disabled)').forEach(el=>el.addEventListener('click',()=>{
+      const id = el.dataset.applicant;
+      if(flow.selected.has(id)) flow.selected.delete(id); else flow.selected.add(id);
+      renderApplyDetails();
+    }));
+
+    const count = flow.selected.size;
+    const lotAmt = ipoLotAmount(ipo);
+    const estTotal = count*lotAmt;
+    document.getElementById('apply-summary').innerHTML = count>0 ? `
+      ${lotAmt===0 ? `<div style="font-size:12px;color:var(--rust);margin-top:14px;">This IPO has no lot size / max price set, so the amount will be recorded as ₹0. Edit the IPO first to set them accurately.</div>` : ''}
+      <div class="row" style="margin-top:14px;">
+        <div style="font-size:13px;color:var(--ink-dim);">${count} applicant${count>1?'s':''} selected</div>
+        <div style="font-size:14px;font-weight:650;" class="tabular">${count} × ${fmtMoney(lotAmt)} = ${fmtMoney(estTotal)}</div>
+      </div>
+      <button class="btn primary block" id="mark-applied-btn" style="margin-top:12px;" ${estTotal>avail?'':''}>
+        Mark selected as applied
+      </button>
+      ${estTotal>avail? `<div style="font-size:12px;color:var(--rust);margin-top:8px;">Amount exceeds available balance in ${esc(bank.name)} (${fmtMoney(avail)} available). You can still proceed if this is expected.</div>`:''}
+    ` : '';
+    const markBtn = document.getElementById('mark-applied-btn');
+    if(markBtn) markBtn.addEventListener('click', ()=> markSelectedApplied(ipo, bank, lotAmt));
+  }
+
+  if(ipo) renderApplyDetails();
+}
+
+async function markSelectedApplied(ipo, bank, lot){
+  const flow = State.applyFlow;
+  const ids = Array.from(flow.selected);
+  for(const applicantId of ids){
+    const app = {
+      id: uid(), ipoId: ipo.id, applicantId, bankId: bank.id,
+      amount: lot, appliedDate: todayStr(),
+      allotmentStatus: 'pending', // pending | not_allotted | allotted | partial
+      allottedAmount: 0, refundedAmount: 0, refundDate: null,
+    };
+    await idbPut('applications', app);
+    State.applications.push(app);
+  }
+  flow.selected = new Set();
+  toast(`✅ ${ids.length} application${ids.length>1?'s':''} marked as applied — ${bank.name}, ${fmtMoney(ids.length*lot)}`);
+  render();
+  // restore flow state after full re-render
+  State.applyFlow.ipoId = ipo.id; State.applyFlow.bankId = bank.id;
+  go('apply');
+}
+
+/* ==================== APPLICATIONS (full list) ==================== */
+function renderApplications(main){
+  main._appFilters = main._appFilters || { ipo:'', bank:'', applicant:'', status:'' };
+  const f = main._appFilters;
+
+  const rows = State.applications.slice().sort((a,b)=>(b.appliedDate||'').localeCompare(a.appliedDate||''));
+
+  main.innerHTML = `
+    <h1 class="page-title">Applications</h1>
+    <p class="page-sub">Every IPO application — which applicant, which bank, current status</p>
+
+    <div class="grid cols-4" style="margin-bottom:16px;">
+      <label class="field">IPO
+        <select id="filt-ipo"><option value="">All IPOs</option>${State.ipos.map(i=>`<option value="${i.id}" ${f.ipo===i.id?'selected':''}>${esc(i.name)}</option>`).join('')}</select>
+      </label>
+      <label class="field">Bank
+        <select id="filt-bank"><option value="">All banks</option>${State.banks.map(b=>`<option value="${b.id}" ${f.bank===b.id?'selected':''}>${esc(b.name)}</option>`).join('')}</select>
+      </label>
+      <label class="field">Applicant
+        <select id="filt-applicant"><option value="">All applicants</option>${State.applicants.map(a=>`<option value="${a.id}" ${f.applicant===a.id?'selected':''}>${esc(a.name)}</option>`).join('')}</select>
+      </label>
+      <label class="field">Status
+        <select id="filt-status">
+          <option value="">All statuses</option>
+          <option value="pending" ${f.status==='pending'?'selected':''}>Pending</option>
+          <option value="not_allotted" ${f.status==='not_allotted'?'selected':''}>Not allotted</option>
+          <option value="partial" ${f.status==='partial'?'selected':''}>Partial</option>
+          <option value="allotted" ${f.status==='allotted'?'selected':''}>Allotted</option>
+        </select>
+      </label>
+    </div>
+
+    <div id="app-list-slot"></div>
+  `;
+
+  ['ipo','bank','applicant','status'].forEach(k=>{
+    document.getElementById(`filt-${k}`).addEventListener('change', (e)=>{ f[k]=e.target.value; renderList(); });
+  });
+
+  function renderList(){
+    let list = rows.filter(a=>{
+      if(f.ipo && a.ipoId!==f.ipo) return false;
+      if(f.bank && a.bankId!==f.bank) return false;
+      if(f.applicant && a.applicantId!==f.applicant) return false;
+      if(f.status && a.allotmentStatus!==f.status) return false;
+      return true;
+    });
+    const slot = document.getElementById('app-list-slot');
+    if(list.length===0){
+      slot.innerHTML = `<div class="empty-state">${ICONS.list}<div class="t">No applications match</div><div class="s">${rows.length===0?'Mark some applications from Apply / Manage.':'Try clearing a filter.'}</div></div>`;
+      return;
+    }
+    // summary bar
+    const totalAmt = list.reduce((s,a)=>s+(a.amount||0),0);
+    slot.innerHTML = `
+      <div class="row" style="margin-bottom:10px;">
+        <div style="font-size:12.5px;color:var(--ink-faint);">${list.length} application${list.length!==1?'s':''}</div>
+        <div style="font-size:13px;font-weight:600;" class="tabular">Total applied: ${fmtMoney(totalAmt)}</div>
+      </div>
+      <div class="card" style="padding:6px 12px;">
+        ${list.map(a=>{
+          const ipo = ipoById(a.ipoId); const bank = bankById(a.bankId); const applicant = applicantById(a.applicantId);
+          return `<div class="list-item">
+            <div class="main" style="cursor:pointer;flex:1;" data-open-ipo="${a.ipoId}">
+              <div class="title">${esc(applicant?applicant.name:'Unknown')} · ${esc(ipo?ipo.name:'Unknown IPO')}</div>
+              <div class="meta tabular">${esc(bank?bank.name:'Unknown bank')} · ${fmtDate(a.appliedDate)} · ${fmtMoney(a.amount)}</div>
+            </div>
+            ${allotmentBadge(a)}
+            <div class="actions">
+              <button class="iconbtn" data-unapply="${a.id}" title="Remove application">${ICONS.trash}</button>
+            </div>
+          </div>`;
+        }).join('')}
+      </div>
+    `;
+    slot.querySelectorAll('[data-open-ipo]').forEach(el=>el.addEventListener('click',()=>openAllotmentModal(el.dataset.openIpo)));
+    slot.querySelectorAll('[data-unapply]').forEach(el=>el.addEventListener('click',()=>confirmUnapply(el.dataset.unapply)));
+  }
+  renderList();
+}
+function confirmUnapply(appId){
+  const app = State.applications.find(a=>a.id===appId);
+  if(!app) return;
+  const ipo = ipoById(app.ipoId); const applicant = applicantById(app.applicantId); const bank = bankById(app.bankId);
+  openModal(`
+    <div class="modal">
+      <h3>Remove this application?</h3>
+      <p style="font-size:13px;color:var(--ink-dim);">${esc(applicant?applicant.name:'—')}'s application for ${esc(ipo?ipo.name:'this IPO')} via ${esc(bank?bank.name:'—')} (${fmtMoney(app.amount)}) will be deleted, and the applicant will become selectable again for this IPO. Any recorded allotment/refund amounts on it will be lost. This cannot be undone.</p>
+      <div class="modal-actions">
+        <button class="btn ghost" data-close="1">Cancel</button>
+        <button class="btn danger" id="confirm-unapply">Remove application</button>
+      </div>
+    </div>
+  `);
+  document.getElementById('confirm-unapply').addEventListener('click', async ()=>{
+    await idbDelete('applications', appId);
+    State.applications = State.applications.filter(a=>a.id!==appId);
+    closeModal(); toast('Application removed'); render();
+  });
+}
+
+/* ==================== BANKS ==================== */
+function renderBanks(main){
+  main.innerHTML = `
+    <div class="row"><h1 class="page-title">Banks</h1>
+      <button class="btn primary" id="add-bank">${ICONS.plus} Add bank</button>
+    </div>
+    <p class="page-sub">Your saved banks — select any to see its money history</p>
+    ${State.banks.length===0 ? `<div class="empty-state">${ICONS.bank}<div class="t">No banks yet</div><div class="s">Add your first bank to start tracking money.</div></div>` : `
+      <div class="card" style="padding:6px 12px;">
+        ${State.banks.map(b=>{
+          const avail = bankAvailable(b.id);
+          const blocked = bankBlocked(b.id);
+          return `<div class="list-item">
+            <div class="main" data-view-bank="${b.id}" style="cursor:pointer;flex:1;">
+              <div class="title">${esc(b.name)}</div>
+              <div class="meta tabular">Available ${fmtMoney(avail)} · Blocked ${fmtMoney(blocked)}</div>
+            </div>
+            <div class="actions">
+              <button class="iconbtn" data-edit-bank="${b.id}">${ICONS.edit}</button>
+              <button class="iconbtn" data-del-bank="${b.id}">${ICONS.trash}</button>
+            </div>
+          </div>`;
+        }).join('')}
+      </div>
+    `}
+    <div id="bank-detail"></div>
+  `;
+  document.getElementById('add-bank').addEventListener('click',()=>openBankModal(null));
+  main.querySelectorAll('[data-edit-bank]').forEach(el=>el.addEventListener('click',()=>openBankModal(bankById(el.dataset.editBank))));
+  main.querySelectorAll('[data-del-bank]').forEach(el=>el.addEventListener('click',()=>confirmDeleteBank(el.dataset.delBank)));
+  main.querySelectorAll('[data-view-bank]').forEach(el=>el.addEventListener('click',()=>renderBankDetail(el.dataset.viewBank)));
+}
+function openBankModal(bank){
+  const isEdit = !!bank;
+  openModal(`
+    <div class="modal">
+      <h3>${isEdit?'Edit bank':'Add bank'}</h3>
+      <label class="field">Bank name
+        <input type="text" id="bank-name" value="${bank?esc(bank.name):''}" placeholder="e.g. SBI">
+      </label>
+      <label class="field" style="margin-top:12px;">Current available money (₹)
+        <input type="number" id="bank-balance" value="${bank?bank.openingBalance:''}" placeholder="0">
+      </label>
+      <div class="modal-actions">
+        <button class="btn ghost" data-close="1">Cancel</button>
+        <button class="btn primary" id="save-bank">Save</button>
+      </div>
+    </div>
+  `);
+  document.getElementById('save-bank').addEventListener('click', async ()=>{
+    const name = document.getElementById('bank-name').value.trim();
+    const balance = Number(document.getElementById('bank-balance').value)||0;
+    if(!name){ toast('Enter a bank name'); return; }
+    const obj = bank || { id: uid(), createdDate: todayStr() };
+    obj.name = name; obj.openingBalance = isEdit ? obj.openingBalance : balance;
+    if(isEdit){
+      // editing balance directly adjusts opening balance (simple model)
+      obj.openingBalance = balance;
+    }
+    await idbPut('banks', obj);
+    if(!isEdit) State.banks.push(obj);
+    closeModal(); toast(isEdit?'Bank updated':'Bank added'); render();
+  });
+}
+function confirmDeleteBank(id){
+  const used = State.applications.some(a=>a.bankId===id) || State.transfers.some(t=>t.fromBankId===id||t.toBankId===id);
+  openModal(`
+    <div class="modal">
+      <h3>Delete bank?</h3>
+      <p style="font-size:13px;color:var(--ink-dim);">${used?'This bank has associated applications or transfers. Deleting it will not remove those records, but the bank name will show as unknown.':'This cannot be undone.'}</p>
+      <div class="modal-actions">
+        <button class="btn ghost" data-close="1">Cancel</button>
+        <button class="btn danger" id="confirm-del-bank">Delete</button>
+      </div>
+    </div>
+  `);
+  document.getElementById('confirm-del-bank').addEventListener('click', async ()=>{
+    await idbDelete('banks', id);
+    State.banks = State.banks.filter(b=>b.id!==id);
+    closeModal(); toast('Bank deleted'); render();
+  });
+}
+function renderBankDetail(bankId){
+  const bank = bankById(bankId);
+  const detail = document.getElementById('bank-detail');
+  if(!bank || !detail) return;
+  const {entries, current} = bankLedger(bankId);
+  detail.innerHTML = `
+    <div class="section-label">${esc(bank.name)} — money history</div>
+    <div class="card">
+      ${entries.map(e=>`
+        <div class="list-item">
+          <div class="main"><div class="title" style="font-weight:500;font-size:13.5px;">${esc(e.label)}</div><div class="meta">${fmtDate(e.date)}</div></div>
+          <div class="money ${e.amount>=0?'plus':'minus'} tabular">${e.amount>=0?'+':''}${fmtMoney(e.amount)}</div>
+        </div>
+      `).join('')}
+      <div class="list-item"><div class="title">Current available</div><div class="money gold tabular" style="color:var(--gold);">${fmtMoney(current)}</div></div>
+    </div>
+  `;
+}
+
+/* ==================== APPLICANTS ==================== */
+function renderApplicants(main){
+  main.innerHTML = `
+    <div class="row"><h1 class="page-title">Applicants</h1>
+      <button class="btn primary" id="add-applicant">${ICONS.plus} Add applicant</button>
+    </div>
+    <p class="page-sub">People whose demat accounts you use for applications</p>
+    ${State.applicants.length===0 ? `<div class="empty-state">${ICONS.people}<div class="t">No applicants yet</div><div class="s">Add the people you apply for.</div></div>` : `
+      <div class="card" style="padding:6px 12px;">
+        ${State.applicants.map(a=>{
+          const apps = State.applications.filter(x=>x.applicantId===a.id);
+          return `<div class="list-item">
+            <div class="main" style="cursor:pointer;flex:1;" data-view-applicant="${a.id}">
+              <div class="title">${esc(a.name)}</div>
+              <div class="meta">${apps.length} application${apps.length!==1?'s':''}</div>
+            </div>
+            <div class="actions">
+              <button class="iconbtn" data-edit-applicant="${a.id}">${ICONS.edit}</button>
+              <button class="iconbtn" data-del-applicant="${a.id}">${ICONS.trash}</button>
+            </div>
+          </div>`;
+        }).join('')}
+      </div>
+    `}
+    <div id="applicant-detail"></div>
+  `;
+  document.getElementById('add-applicant').addEventListener('click',()=>openApplicantModal(null));
+  main.querySelectorAll('[data-edit-applicant]').forEach(el=>el.addEventListener('click',()=>openApplicantModal(applicantById(el.dataset.editApplicant))));
+  main.querySelectorAll('[data-del-applicant]').forEach(el=>el.addEventListener('click',()=>confirmDeleteApplicant(el.dataset.delApplicant)));
+  main.querySelectorAll('[data-view-applicant]').forEach(el=>el.addEventListener('click',()=>renderApplicantDetail(el.dataset.viewApplicant)));
+}
+function openApplicantModal(applicant){
+  const isEdit = !!applicant;
+  openModal(`
+    <div class="modal">
+      <h3>${isEdit?'Edit applicant':'Add applicant'}</h3>
+      <label class="field">Name
+        <input type="text" id="applicant-name" value="${applicant?esc(applicant.name):''}" placeholder="e.g. Person A">
+      </label>
+      <div class="modal-actions">
+        <button class="btn ghost" data-close="1">Cancel</button>
+        <button class="btn primary" id="save-applicant">Save</button>
+      </div>
+    </div>
+  `);
+  document.getElementById('save-applicant').addEventListener('click', async ()=>{
+    const name = document.getElementById('applicant-name').value.trim();
+    if(!name){ toast('Enter a name'); return; }
+    const obj = applicant || { id: uid() };
+    obj.name = name;
+    await idbPut('applicants', obj);
+    if(!isEdit) State.applicants.push(obj);
+    closeModal(); toast(isEdit?'Applicant updated':'Applicant added'); render();
+  });
+}
+function confirmDeleteApplicant(id){
+  openModal(`
+    <div class="modal">
+      <h3>Delete applicant?</h3>
+      <p style="font-size:13px;color:var(--ink-dim);">Existing application records will keep this name but the applicant will no longer be selectable. This cannot be undone.</p>
+      <div class="modal-actions">
+        <button class="btn ghost" data-close="1">Cancel</button>
+        <button class="btn danger" id="confirm-del-applicant">Delete</button>
+      </div>
+    </div>
+  `);
+  document.getElementById('confirm-del-applicant').addEventListener('click', async ()=>{
+    await idbDelete('applicants', id);
+    State.applicants = State.applicants.filter(a=>a.id!==id);
+    closeModal(); toast('Applicant deleted'); render();
+  });
+}
+function renderApplicantDetail(applicantId){
+  const applicant = applicantById(applicantId);
+  const detail = document.getElementById('applicant-detail');
+  if(!applicant || !detail) return;
+  const apps = State.applications.filter(a=>a.applicantId===applicantId);
+  detail.innerHTML = `
+    <div class="section-label">${esc(applicant.name)} — application history</div>
+    ${apps.length===0? `<div class="empty-state"><div class="t">No applications yet</div></div>` : `
+    <div class="card">
+      ${apps.map(a=>{
+        const ipo = ipoById(a.ipoId); const bank = bankById(a.bankId);
+        return `<div class="list-item">
+          <div class="main"><div class="title">${esc(ipo?ipo.name:'IPO')}</div><div class="meta">${esc(bank?bank.name:'—')} · ${fmtDate(a.appliedDate)}</div></div>
+          ${allotmentBadge(a)}
+        </div>`;
+      }).join('')}
+    </div>`}
+  `;
+}
+function allotmentBadge(a){
+  const map = {pending:['closing','Pending'], not_allotted:['closed','Not allotted'], allotted:['listed','Allotted'], partial:['allot','Partial']};
+  const [cls,label] = map[a.allotmentStatus]||['closed','Pending'];
+  return `<span class="badge ${cls}">${label}</span>`;
+}
+
+/* ==================== IPOs ==================== */
+const IPO_FEED_URL = 'https://raw.githubusercontent.com/emoce07/ipo-data/refs/heads/main/ipos.json';
+
+function isoToDate(s){
+  // accepts "YYYY-MM-DD" already, or falls through
+  if(!s) return '';
+  if(/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  const d = new Date(s);
+  if(isNaN(d)) return '';
+  return d.toISOString().slice(0,10);
+}
+
+async function syncLiveIpos(){
+  const btn = document.getElementById('sync-ipos-btn');
+  if(btn){ btn.disabled = true; btn.textContent = 'Syncing…'; }
+  try{
+    const res = await fetch(IPO_FEED_URL, {cache:'no-store'});
+    if(!res.ok) throw new Error('Fetch failed: '+res.status);
+    const data = await res.json();
+    const feed = Array.isArray(data.ipos) ? data.ipos : [];
+    let added=0, updated=0;
+    for(const item of feed){
+      if(!item.name) continue;
+      const existing = State.ipos.find(i=>i.name.trim().toLowerCase()===item.name.trim().toLowerCase());
+      const obj = existing || { id: uid() };
+      obj.name = item.name;
+      obj.company = item.company || obj.company || '';
+      obj.openDate = isoToDate(item.openDate) || obj.openDate || '';
+      obj.closeDate = isoToDate(item.closeDate) || obj.closeDate || '';
+      obj.allotmentDate = isoToDate(item.allotmentDate) || obj.allotmentDate || '';
+      obj.refundDate = isoToDate(item.refundDate) || obj.refundDate || '';
+      obj.listingDate = isoToDate(item.listingDate) || obj.listingDate || '';
+      obj.priceBand = item.priceBand || obj.priceBand || '';
+      // maxPrice: trust an explicit non-zero value from the feed first;
+      // otherwise derive it straight from the (just-updated) price band text,
+      // so the block price recalculates every sync instead of staying stuck
+      // at whatever it was the first time this IPO was added.
+      obj.maxPrice = Number(item.maxPrice) || parseMaxPriceFromBand(obj.priceBand) || obj.maxPrice || 0;
+      obj.lotSize = Number(item.lotSize)||obj.lotSize||0;
+      obj.registrar = item.registrar || obj.registrar || '';
+      obj.registrarUrl = item.registrarUrl || obj.registrarUrl || '';
+      obj.notes = item.notes || obj.notes || '';
+      await idbPut('ipos', obj);
+      if(existing) updated++; else { State.ipos.push(obj); added++; }
+    }
+    localStorage.setItem('ipo-feed-last-sync', new Date().toISOString());
+    localStorage.setItem('ipo-feed-updated-at', data.updatedAt||'');
+    toast(`Synced: ${added} added, ${updated} updated`);
+    render();
+  }catch(err){
+    console.error(err);
+    toast('Sync failed — check the feed URL or your connection');
+    if(btn){ btn.disabled=false; btn.textContent = 'Sync live IPOs'; }
+  }
+}
+
+function renderIpos(main){
+  main._ipoTab = main._ipoTab || 'active';
+  const tab = main._ipoTab;
+  const lastSync = localStorage.getItem('ipo-feed-last-sync');
+  const feedUpdatedAt = localStorage.getItem('ipo-feed-updated-at');
+  main.innerHTML = `
+    <div class="row"><h1 class="page-title">IPOs</h1>
+      <div style="display:flex;gap:8px;">
+        <button class="btn ghost" id="sync-ipos-btn">${ICONS.download} Sync live IPOs</button>
+        <button class="btn primary" id="add-ipo">${ICONS.plus} Add IPO</button>
+      </div>
+    </div>
+    <p class="page-sub">Manage IPO details, dates and registrar info
+      ${lastSync ? ` · Last synced ${new Date(lastSync).toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}${feedUpdatedAt?` (feed dated ${feedUpdatedAt})`:''}` : ' · Not synced yet'}
+    </p>
+    <div class="pill-tabs">
+      <button data-tab="active" class="${tab==='active'?'active':''}">Active & upcoming</button>
+      <button data-tab="all" class="${tab==='all'?'active':''}">All</button>
+    </div>
+    <div id="ipo-list"></div>
+  `;
+  document.getElementById('add-ipo').addEventListener('click',()=>openIpoModal(null));
+  document.getElementById('sync-ipos-btn').addEventListener('click', syncLiveIpos);
+  main.querySelectorAll('[data-tab]').forEach(b=>b.addEventListener('click',()=>{ main._ipoTab=b.dataset.tab; renderIpos(main); }));
+  const list = tab==='active' ? State.ipos.filter(i=>ipoStatus(i).key!=='listed' && ipoStatus(i).key!=='closed') : State.ipos.slice();
+  list.sort((a,b)=>(a.openDate||'').localeCompare(b.openDate||''));
+  const listEl = document.getElementById('ipo-list');
+  listEl.innerHTML = list.length===0 ? `<div class="empty-state">${ICONS.ipo}<div class="t">No IPOs here</div><div class="s">Add one to get started.</div></div>` : `
+    <div class="card" style="padding:6px 12px;">
+      ${list.map(ipo=>{
+        const st = ipoStatus(ipo);
+        return `<div class="list-item">
+          <div class="main" style="cursor:pointer;flex:1;" data-view-ipo="${ipo.id}">
+            <div class="title">${esc(ipo.name)}</div>
+            <div class="meta">${fmtDate(ipo.openDate)}–${fmtDate(ipo.closeDate)} · ${ipoApplications(ipo.id).length} applications</div>
+          </div>
+          <span class="badge ${st.key}">${st.label}</span>
+          <div class="actions">
+            <button class="iconbtn" data-edit-ipo="${ipo.id}">${ICONS.edit}</button>
+            <button class="iconbtn" data-del-ipo="${ipo.id}">${ICONS.trash}</button>
+          </div>
+        </div>`;
+      }).join('')}
+    </div>
+  `;
+  listEl.querySelectorAll('[data-edit-ipo]').forEach(el=>el.addEventListener('click',()=>openIpoModal(ipoById(el.dataset.editIpo))));
+  listEl.querySelectorAll('[data-del-ipo]').forEach(el=>el.addEventListener('click',()=>confirmDeleteIpo(el.dataset.delIpo)));
+  listEl.querySelectorAll('[data-view-ipo]').forEach(el=>el.addEventListener('click',()=>{ go('apply'); State.applyFlow={ipoId:el.dataset.viewIpo, bankId:null, selected:new Set()}; render(); }));
+}
+function openIpoModal(ipo, prefillName){
+  const isEdit = !!ipo;
+  const f = ipo || {};
+  openModal(`
+    <div class="modal">
+      <h3>${isEdit?'Edit IPO':'Add IPO'}</h3>
+      <div class="grid" style="gap:10px;">
+        <label class="field">IPO name<input type="text" id="f-name" value="${esc(f.name||prefillName||'')}"></label>
+        <label class="field">Company name<input type="text" id="f-company" value="${esc(f.company||'')}"></label>
+        <div class="grid cols-2">
+          <label class="field">Opening date<input type="date" id="f-open" value="${f.openDate||''}"></label>
+          <label class="field">Closing date<input type="date" id="f-close" value="${f.closeDate||''}"></label>
+        </div>
+        <div class="grid cols-2">
+          <label class="field">Allotment date<input type="date" id="f-allot" value="${f.allotmentDate||''}"></label>
+          <label class="field">Refund/unblock date<input type="date" id="f-refund" value="${f.refundDate||''}"></label>
+        </div>
+        <label class="field">Listing date<input type="date" id="f-listing" value="${f.listingDate||''}"></label>
+        <label class="field">Price band (display, e.g. ₹32–₹34)<input type="text" id="f-price" value="${esc(f.priceBand||'')}" placeholder="e.g. ₹32–₹34"></label>
+        <div class="grid cols-2">
+          <label class="field">Max price / share (₹)<input type="number" id="f-maxprice" value="${f.maxPrice||''}" placeholder="e.g. 34"></label>
+          <label class="field">Lot size (shares per lot)<input type="number" id="f-lot" value="${f.lotSize||''}" placeholder="e.g. 400"></label>
+        </div>
+        <div class="stat" id="lot-amount-preview" style="padding:10px 14px;"></div>
+        <label class="field">Registrar<input type="text" id="f-registrar" value="${esc(f.registrar||'')}"></label>
+        <label class="field">Registrar website (URL)<input type="text" id="f-registrar-url" value="${esc(f.registrarUrl||'')}" placeholder="https://..."></label>
+        <label class="field">Notes<textarea id="f-notes" rows="2">${esc(f.notes||'')}</textarea></label>
+      </div>
+      <div class="modal-actions">
+        <button class="btn ghost" data-close="1">Cancel</button>
+        <button class="btn primary" id="save-ipo">Save</button>
+      </div>
+    </div>
+  `);
+  const updatePreview = ()=>{
+    const maxPrice = Number(document.getElementById('f-maxprice').value)||0;
+    const lot = Number(document.getElementById('f-lot').value)||0;
+    const amt = maxPrice*lot;
+    document.getElementById('lot-amount-preview').innerHTML = `<div class="label">Amount blocked per lot (auto-calculated)</div><div class="value gold tabular">${fmtMoney(amt)}</div>`;
+  };
+  // Typing/pasting a price band (e.g. "₹123–₹130") auto-fills Max price with
+  // the upper end of the band, so the blocked amount stays correct without
+  // having to update both fields by hand. You can still override Max price
+  // manually afterwards — that value wins when you save.
+  document.getElementById('f-price').addEventListener('input', ()=>{
+    const parsed = parseMaxPriceFromBand(document.getElementById('f-price').value);
+    if(parsed>0) document.getElementById('f-maxprice').value = parsed;
+    updatePreview();
+  });
+  document.getElementById('f-maxprice').addEventListener('input', updatePreview);
+  document.getElementById('f-lot').addEventListener('input', updatePreview);
+  updatePreview();
+  document.getElementById('save-ipo').addEventListener('click', async ()=>{
+    const name = document.getElementById('f-name').value.trim();
+    if(!name){ toast('Enter IPO name'); return; }
+    const obj = ipo || { id: uid() };
+    obj.name = name;
+    obj.company = document.getElementById('f-company').value.trim();
+    obj.openDate = document.getElementById('f-open').value;
+    obj.closeDate = document.getElementById('f-close').value;
+    obj.allotmentDate = document.getElementById('f-allot').value;
+    obj.refundDate = document.getElementById('f-refund').value;
+    obj.listingDate = document.getElementById('f-listing').value;
+    obj.priceBand = document.getElementById('f-price').value.trim();
+    obj.maxPrice = Number(document.getElementById('f-maxprice').value)||0;
+    obj.lotSize = Number(document.getElementById('f-lot').value)||0;
+    obj.registrar = document.getElementById('f-registrar').value.trim();
+    obj.registrarUrl = document.getElementById('f-registrar-url').value.trim();
+    obj.notes = document.getElementById('f-notes').value.trim();
+    await idbPut('ipos', obj);
+    if(!isEdit) State.ipos.push(obj);
+    closeModal(); toast(isEdit?'IPO updated':'IPO added'); render();
+  });
+}
+function confirmDeleteIpo(id){
+  openModal(`
+    <div class="modal">
+      <h3>Delete IPO?</h3>
+      <p style="font-size:13px;color:var(--ink-dim);">Related application records will remain but reference a deleted IPO. This cannot be undone.</p>
+      <div class="modal-actions">
+        <button class="btn ghost" data-close="1">Cancel</button>
+        <button class="btn danger" id="confirm-del-ipo">Delete</button>
+      </div>
+    </div>
+  `);
+  document.getElementById('confirm-del-ipo').addEventListener('click', async ()=>{
+    await idbDelete('ipos', id);
+    State.ipos = State.ipos.filter(i=>i.id!==id);
+    closeModal(); toast('IPO deleted'); render();
+  });
+}
+
+/* ==================== TRANSFERS ==================== */
+function renderTransfers(main){
+  main.innerHTML = `
+    <div class="row"><h1 class="page-title">Transfers</h1>
+      <button class="btn primary" id="add-transfer" ${State.banks.length<2?'disabled':''}>${ICONS.plus} Record transfer</button>
+    </div>
+    <p class="page-sub">Move money between your banks before applying</p>
+    ${State.banks.length<2 ? `<div class="empty-state"><div class="t">Add at least 2 banks first</div></div>` : ''}
+    ${State.transfers.length===0 ? `<div class="empty-state">${ICONS.transfer}<div class="t">No transfers yet</div></div>` : `
+      <div class="card" style="padding:6px 12px;">
+        ${State.transfers.slice().sort((a,b)=>(b.date||'').localeCompare(a.date||'')).map(t=>`
+          <div class="list-item">
+            <div class="main">
+              <div class="title">${esc(bankById(t.fromBankId)?.name||'—')} → ${esc(bankById(t.toBankId)?.name||'—')}</div>
+              <div class="meta">${fmtDate(t.date)}${t.note?' · '+esc(t.note):''}</div>
+            </div>
+            <div class="money tabular">${fmtMoney(t.amount)}</div>
+          </div>
+        `).join('')}
+      </div>
+    `}
+  `;
+  const btn = document.getElementById('add-transfer');
+  if(btn && State.banks.length>=2) btn.addEventListener('click', openTransferModal);
+}
+function openTransferModal(){
+  openModal(`
+    <div class="modal">
+      <h3>Record transfer</h3>
+      <div class="grid" style="gap:10px;">
+        <label class="field">From bank
+          <select id="t-from">${State.banks.map(b=>`<option value="${b.id}">${esc(b.name)} (${fmtMoney(bankAvailable(b.id))})</option>`).join('')}</select>
+        </label>
+        <label class="field">To bank
+          <select id="t-to">${State.banks.map(b=>`<option value="${b.id}">${esc(b.name)}</option>`).join('')}</select>
+        </label>
+        <label class="field">Amount (₹)<input type="number" id="t-amount" placeholder="0"></label>
+        <label class="field">Date<input type="date" id="t-date" value="${todayStr()}"></label>
+        <label class="field">Note (optional)<input type="text" id="t-note"></label>
+      </div>
+      <div class="modal-actions">
+        <button class="btn ghost" data-close="1">Cancel</button>
+        <button class="btn primary" id="save-transfer">Record transfer</button>
+      </div>
+    </div>
+  `);
+  document.getElementById('save-transfer').addEventListener('click', async ()=>{
+    const fromBankId = document.getElementById('t-from').value;
+    const toBankId = document.getElementById('t-to').value;
+    const amount = Number(document.getElementById('t-amount').value)||0;
+    const date = document.getElementById('t-date').value || todayStr();
+    const note = document.getElementById('t-note').value.trim();
+    if(fromBankId===toBankId){ toast('From and to bank must differ'); return; }
+    if(amount<=0){ toast('Enter a valid amount'); return; }
+    const obj = { id: uid(), fromBankId, toBankId, amount, date, note };
+    await idbPut('transfers', obj);
+    State.transfers.push(obj);
+    closeModal(); toast('Transfer recorded'); render();
+  });
+}
+
+/* ==================== PROFIT ==================== */
+function renderProfit(main){
+  const totalProfit = totalProfitAll();
+  main.innerHTML = `
+    <div class="row"><h1 class="page-title">Profit</h1>
+      <button class="btn primary" id="add-sale">${ICONS.plus} Record sale</button>
+    </div>
+    <p class="page-sub">Track realised profit after selling allotted shares</p>
+    <div class="stat" style="max-width:260px;">
+      <div class="label">Total IPO profit</div>
+      <div class="value ${totalProfit>=0?'pos':'neg'} tabular">${fmtMoney(totalProfit)}</div>
+    </div>
+    <div class="section-label">Sales</div>
+    ${State.sales.length===0 ? `<div class="empty-state">${ICONS.profit}<div class="t">No sales recorded yet</div></div>` : `
+      <div class="card" style="padding:6px 12px;">
+        ${State.sales.slice().sort((a,b)=>(b.saleDate||'').localeCompare(a.saleDate||'')).map(s=>{
+          const ipo = ipoById(s.ipoId); const applicant = applicantById(s.applicantId);
+          const profit = (s.saleAmount||0)-(s.investment||0)-(s.charges||0);
+          return `<div class="list-item">
+            <div class="main">
+              <div class="title">${esc(ipo?ipo.name:'IPO')} · ${esc(applicant?applicant.name:'—')}</div>
+              <div class="meta">${fmtDate(s.saleDate)} · Invested ${fmtMoney(s.investment)} → Sold ${fmtMoney(s.saleAmount)}</div>
+            </div>
+            <div class="money ${profit>=0?'plus':'minus'} tabular">${profit>=0?'+':''}${fmtMoney(profit)}</div>
+          </div>`;
+        }).join('')}
+      </div>
+    `}
+  `;
+  document.getElementById('add-sale').addEventListener('click', openSaleModal);
+}
+function openSaleModal(){
+  const allottedApps = State.applications.filter(a=>(a.allottedAmount||0)>0);
+  openModal(`
+    <div class="modal">
+      <h3>Record sale</h3>
+      <div class="grid" style="gap:10px;">
+        <label class="field">Application (IPO · Applicant)
+          <select id="s-app">
+            <option value="">— select —</option>
+            ${allottedApps.map(a=>{
+              const ipo=ipoById(a.ipoId), ap=applicantById(a.applicantId);
+              return `<option value="${a.id}">${esc(ipo?ipo.name:'IPO')} · ${esc(ap?ap.name:'—')} (Allotted ${fmtMoney(a.allottedAmount)})</option>`;
+            }).join('')}
+          </select>
+        </label>
+        <div class="grid cols-2">
+          <label class="field">Investment amount (₹)<input type="number" id="s-invest" placeholder="0"></label>
+          <label class="field">Sale amount (₹)<input type="number" id="s-sale" placeholder="0"></label>
+        </div>
+        <div class="grid cols-2">
+          <label class="field">Charges (₹)<input type="number" id="s-charges" value="0"></label>
+          <label class="field">Sale date<input type="date" id="s-date" value="${todayStr()}"></label>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn ghost" data-close="1">Cancel</button>
+        <button class="btn primary" id="save-sale">Record sale</button>
+      </div>
+    </div>
+  `);
+  document.getElementById('s-app').addEventListener('change',(e)=>{
+    const app = State.applications.find(a=>a.id===e.target.value);
+    if(app) document.getElementById('s-invest').value = app.allottedAmount||'';
+  });
+  document.getElementById('save-sale').addEventListener('click', async ()=>{
+    const appId = document.getElementById('s-app').value;
+    if(!appId){ toast('Select an application'); return; }
+    const app = State.applications.find(a=>a.id===appId);
+    const obj = {
+      id: uid(), ipoId: app.ipoId, applicantId: app.applicantId, applicationId: app.id,
+      investment: Number(document.getElementById('s-invest').value)||0,
+      saleAmount: Number(document.getElementById('s-sale').value)||0,
+      charges: Number(document.getElementById('s-charges').value)||0,
+      saleDate: document.getElementById('s-date').value || todayStr(),
+    };
+    await idbPut('sales', obj);
+    State.sales.push(obj);
+    closeModal(); toast('Sale recorded'); render();
+  });
+}
+
+/* ==================== HISTORY (also allotment management) ==================== */
+function renderHistory(main){
+  main._historyTab = main._historyTab || 'ipos';
+  const tab = main._historyTab;
+  main.innerHTML = `
+    <h1 class="page-title">History</h1>
+    <p class="page-sub">Past IPOs, allotment management, and search across everything</p>
+    <div class="section-label">Search</div>
+    <div class="searchbox">
+      <input type="text" id="global-search" placeholder="Search IPO, bank, or applicant...">
+    </div>
+    <div id="global-results"></div>
+
+    <div class="section-label">All IPOs (allotment & records)</div>
+    <div id="history-ipo-list"></div>
+  `;
+  const list = State.ipos.slice().sort((a,b)=>(b.closeDate||'').localeCompare(a.closeDate||''));
+  document.getElementById('history-ipo-list').innerHTML = list.length===0 ? `<div class="empty-state"><div class="t">No IPOs yet</div></div>` : `
+    <div class="card" style="padding:6px 12px;">
+      ${list.map(ipo=>{
+        const st = ipoStatus(ipo);
+        return `<div class="list-item">
+          <div class="main" style="cursor:pointer;flex:1;" data-open-allot="${ipo.id}">
+            <div class="title">${esc(ipo.name)}</div>
+            <div class="meta">${fmtDate(ipo.openDate)}–${fmtDate(ipo.closeDate)} · ${ipoApplications(ipo.id).length} applications</div>
+          </div>
+          <span class="badge ${st.key}">${st.label}</span>
+        </div>`;
+      }).join('')}
+    </div>
+  `;
+  document.querySelectorAll('[data-open-allot]').forEach(el=>el.addEventListener('click',()=>openAllotmentModal(el.dataset.openAllot)));
+
+  const searchInput = document.getElementById('global-search');
+  const resultsEl = document.getElementById('global-results');
+  searchInput.addEventListener('input', ()=>{
+    const q = searchInput.value.trim().toLowerCase();
+    if(!q){ resultsEl.innerHTML=''; return; }
+    const ipoHits = State.ipos.filter(i=>ipoMatches(i,q));
+    const bankHits = State.banks.filter(b=>b.name.toLowerCase().includes(q));
+    const applicantHits = State.applicants.filter(a=>a.name.toLowerCase().includes(q));
+    let html = '';
+    if(applicantHits.length){
+      applicantHits.forEach(ap=>{
+        const apps = State.applications.filter(a=>a.applicantId===ap.id);
+        html += `<div class="card" style="margin-bottom:10px;"><div style="font-weight:600;margin-bottom:8px;">${esc(ap.name)}</div>
+          ${apps.map(a=>{ const ipo=ipoById(a.ipoId), bank=bankById(a.bankId); return `<div class="meta" style="padding:4px 0;">${esc(ipo?ipo.name:'—')} — ${esc(bank?bank.name:'—')} — ${allotmentBadge(a)}</div>`; }).join('') || `<div class="meta">No applications</div>`}
+        </div>`;
+      });
+    }
+    if(bankHits.length){
+      bankHits.forEach(b=>{
+        const apps = State.applications.filter(a=>a.bankId===b.id);
+        html += `<div class="card" style="margin-bottom:10px;"><div style="font-weight:600;margin-bottom:8px;">${esc(b.name)}</div>
+          ${apps.map(a=>{ const ipo=ipoById(a.ipoId); return `<div class="meta tabular" style="padding:4px 0;">${esc(ipo?ipo.name:'—')} — ${fmtMoney(a.amount)}</div>`; }).join('') || `<div class="meta">No applications</div>`}
+        </div>`;
+      });
+    }
+    if(ipoHits.length){
+      html += `<div class="card"><div style="font-weight:600;margin-bottom:8px;">IPOs</div>${ipoHits.map(i=>`<div class="meta" style="padding:4px 0;cursor:pointer;" data-open-allot="${i.id}">${esc(i.name)} — ${ipoStatus(i).label}</div>`).join('')}</div>`;
+    }
+    resultsEl.innerHTML = html || `<div class="empty-state"><div class="t">No matches</div></div>`;
+    resultsEl.querySelectorAll('[data-open-allot]').forEach(el=>el.addEventListener('click',()=>openAllotmentModal(el.dataset.openAllot)));
+  });
+}
+function openAllotmentModal(ipoId){
+  const ipo = ipoById(ipoId);
+  const apps = ipoApplications(ipoId);
+  openModal(`
+    <div class="modal" style="max-width:520px;">
+      <h3>${esc(ipo.name)} — allotment</h3>
+      ${ipo.registrarUrl ? `<a class="link" href="${esc(ipo.registrarUrl)}" target="_blank" rel="noopener" style="font-size:13px;display:inline-flex;align-items:center;gap:6px;margin-bottom:14px;">${ICONS.external} Check allotment on registrar site</a>` : ''}
+      ${apps.length===0 ? `<div class="empty-state"><div class="t">No applications for this IPO</div></div>` : `
+      <div style="display:flex;flex-direction:column;gap:10px;">
+        ${apps.map(a=>{
+          const applicant = applicantById(a.applicantId); const bank = bankById(a.bankId);
+          return `<div class="card" data-app-row="${a.id}">
+            <div class="row"><div style="font-weight:600;font-size:13.5px;">${esc(applicant?applicant.name:'—')}</div><div class="meta">${esc(bank?bank.name:'—')}</div></div>
+            <div class="meta tabular" style="margin:4px 0 10px;">Applied ${fmtMoney(a.amount)}</div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;">
+              <button class="btn sm ${a.allotmentStatus==='not_allotted'?'primary':'ghost'}" data-set-status="${a.id}" data-status="not_allotted">Not allotted</button>
+              <button class="btn sm ${a.allotmentStatus==='allotted'?'primary':'ghost'}" data-set-status="${a.id}" data-status="allotted">Fully allotted</button>
+              <button class="btn sm ${a.allotmentStatus==='partial'?'primary':'ghost'}" data-set-status="${a.id}" data-status="partial">Partial</button>
+            </div>
+            <div id="allot-extra-${a.id}" style="margin-top:10px;"></div>
+          </div>`;
+        }).join('')}
+      </div>`}
+      <div class="modal-actions"><button class="btn ghost" data-close="1" style="flex:1;">Close</button></div>
+    </div>
+  `);
+  apps.forEach(a=>renderAllotExtra(a));
+  document.querySelectorAll('[data-set-status]').forEach(btn=>btn.addEventListener('click', async ()=>{
+    const appId = btn.dataset.setStatus; const status = btn.dataset.status;
+    const app = State.applications.find(x=>x.id===appId);
+    app.allotmentStatus = status;
+    if(status==='not_allotted'){ app.allottedAmount = 0; }
+    if(status==='allotted'){ app.allottedAmount = app.amount; }
+    await idbPut('applications', app);
+    openAllotmentModal(ipoId); // re-render modal
+  }));
+}
+function renderAllotExtra(a){
+  const el = document.getElementById(`allot-extra-${a.id}`);
+  if(!el) return;
+  if(a.allotmentStatus==='pending'){ el.innerHTML=''; return; }
+  const applied = a.amount||0;
+  const allotted = a.allottedAmount||0;
+  const refunded = a.refundedAmount||0;
+  const owed = Math.max(0, applied-allotted);
+  const pending = Math.max(0, owed-refunded);
+  el.innerHTML = `
+    <div class="hr"></div>
+    <div class="grid cols-2" style="gap:8px;">
+      <label class="field">Allotted amount (₹)<input type="number" class="allot-amt" data-app="${a.id}" value="${allotted}"></label>
+      <label class="field">Refunded so far (₹)<input type="number" class="refund-amt" data-app="${a.id}" value="${refunded}"></label>
+    </div>
+    <div class="meta tabular" style="margin-top:8px;">Still pending refund: <b>${fmtMoney(pending)}</b></div>
+    <button class="btn sm ghost" data-save-amounts="${a.id}" style="margin-top:8px;">Save amounts</button>
+  `;
+  el.querySelector('[data-save-amounts]').addEventListener('click', async ()=>{
+    const app = State.applications.find(x=>x.id===a.id);
+    app.allottedAmount = Number(el.querySelector('.allot-amt').value)||0;
+    app.refundedAmount = Number(el.querySelector('.refund-amt').value)||0;
+    if(app.refundedAmount>0 && !app.refundDate) app.refundDate = todayStr();
+    await idbPut('applications', app);
+    toast('Amounts updated'); render();
+  });
+}
+
+/* ==================== SETTINGS ==================== */
+function renderSettings(main){
+  const installed = isStandalone();
+  const canPrompt = !!deferredInstallPrompt;
+  const ios = isIOS();
+  main.innerHTML = `
+    <h1 class="page-title">Settings</h1>
+    <p class="page-sub">Manage your data and appearance</p>
+
+    <div class="section-label">Install as an app</div>
+    <div class="card">
+      ${installed ? `
+        <p style="font-size:13px;color:var(--green);margin:0;">✅ Already running as an installed app.</p>
+      ` : canPrompt ? `
+        <p style="font-size:13px;color:var(--ink-dim);margin:0 0 12px;">Install IPO Ledger to your home screen — it opens full-screen, like a native app, and keeps working offline.</p>
+        <button class="btn primary" id="install-btn">${ICONS.download} Install app</button>
+      ` : ios ? `
+        <p style="font-size:13px;color:var(--ink-dim);margin:0 0 6px;">On iPhone/iPad: tap the <b>Share</b> button in Safari's toolbar, then <b>Add to Home Screen</b>. It'll then open full-screen from your home screen like any other app.</p>
+        <p style="font-size:11.5px;color:var(--ink-faint);margin:0;">This only works in Safari — Chrome/Firefox on iOS can't install home-screen apps due to Apple's restrictions.</p>
+      ` : `
+        <p style="font-size:13px;color:var(--ink-dim);margin:0 0 6px;">Your browser hasn't offered an install prompt yet. Look for an <b>Install</b> or <b>Add to Home Screen</b> option in your browser's menu (⋮ or share icon) while viewing this page.</p>
+        <p style="font-size:11.5px;color:var(--ink-faint);margin:0;">Some browsers only show this after you've visited the page a couple of times.</p>
+      `}
+    </div>
+
+    <div class="section-label">Appearance</div>
+    <div class="card">
+      <div class="row">
+        <div style="font-size:13.5px;">Theme</div>
+        <div class="pill-tabs" style="margin:0;">
+          <button data-theme-btn="system" class="${!localStorage.getItem('ipo-theme')?'active':''}">System</button>
+          <button data-theme-btn="light" class="${localStorage.getItem('ipo-theme')==='light'?'active':''}">Light</button>
+          <button data-theme-btn="dark" class="${localStorage.getItem('ipo-theme')==='dark'?'active':''}">Dark</button>
+        </div>
+      </div>
+    </div>
+    <div class="section-label">Manage</div>
+    <div class="grid cols-3">
+      <button class="btn ghost" data-goto="banks">${ICONS.bank} Banks</button>
+      <button class="btn ghost" data-goto="applicants">${ICONS.people} Applicants</button>
+      <button class="btn ghost" data-goto="ipos">${ICONS.ipo} IPOs</button>
+    </div>
+    <div class="section-label">Data</div>
+    <div class="card">
+      <p style="font-size:13px;color:var(--ink-dim);margin:0 0 12px;">All data is stored locally on this device (IndexedDB) and works offline. Export a backup regularly.</p>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;">
+        <button class="btn primary" id="s-export">${ICONS.download} Export backup (JSON)</button>
+        <button class="btn ghost" id="s-import">${ICONS.upload} Import backup</button>
+        <button class="btn danger" id="s-wipe">${ICONS.trash} Erase all data</button>
+      </div>
+    </div>
+  `;
+  const installBtn = document.getElementById('install-btn');
+  if(installBtn) installBtn.addEventListener('click', async ()=>{
+    if(!deferredInstallPrompt) return;
+    deferredInstallPrompt.prompt();
+    const {outcome} = await deferredInstallPrompt.userChoice;
+    deferredInstallPrompt = null;
+    if(outcome==='accepted') toast('Installing…'); else render();
+  });
+  main.querySelectorAll('[data-theme-btn]').forEach(b=>b.addEventListener('click',()=>{
+    const v = b.dataset.themeBtn;
+    if(v==='system') localStorage.removeItem('ipo-theme'); else localStorage.setItem('ipo-theme', v);
+    applyTheme(); render();
+  }));
+  main.querySelectorAll('[data-goto]').forEach(b=>b.addEventListener('click',()=>go(b.dataset.goto)));
+  document.getElementById('s-export').addEventListener('click', exportBackup);
+  document.getElementById('s-import').addEventListener('click', triggerImport);
+  document.getElementById('s-wipe').addEventListener('click', ()=>{
+    openModal(`
+      <div class="modal">
+        <h3>Erase all data?</h3>
+        <p style="font-size:13px;color:var(--ink-dim);">This permanently deletes every bank, applicant, IPO, application, transfer and sale record on this device. Export a backup first if unsure.</p>
+        <div class="modal-actions">
+          <button class="btn ghost" data-close="1">Cancel</button>
+          <button class="btn danger" id="confirm-wipe">Erase everything</button>
+        </div>
+      </div>
+    `);
+    document.getElementById('confirm-wipe').addEventListener('click', async ()=>{
+      for(const s of ['banks','applicants','ipos','applications','transfers','sales']) await idbClear(s);
+      await loadAll();
+      closeModal(); toast('All data erased'); go('dashboard');
+    });
+  });
+}
+
+/* ---------- THEME ---------- */
+function applyTheme(){
+  const t = localStorage.getItem('ipo-theme');
+  if(t) document.documentElement.setAttribute('data-theme', t);
+  else document.documentElement.removeAttribute('data-theme');
+}
+
+/* ---------- INSTALL (PWA "Add to Home Screen") ---------- */
+let deferredInstallPrompt = null;
+const isStandalone = () => window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent);
+window.addEventListener('beforeinstallprompt', (e)=>{
+  e.preventDefault();
+  deferredInstallPrompt = e;
+  if(State.route==='settings') render(); // refresh so the Install button becomes active
+});
+window.addEventListener('appinstalled', ()=>{ deferredInstallPrompt = null; toast('App installed'); });
+
+/* ---------- BOOT ---------- */
+(async function boot(){
+  applyTheme();
+  try{
+    db = await openDB();
+    await loadAll();
+  }catch(e){
+    console.error('DB init failed', e);
+  }
+  render();
+})();
+</script>
+</body>
+</html>
