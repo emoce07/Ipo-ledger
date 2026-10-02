@@ -1508,6 +1508,37 @@ function openIpoModal(ipo, prefillName){
     closeModal(); toast(isEdit?'IPO updated':'IPO added'); render();
   });
 }
+async function autoDetectSmeIpos(){
+  const candidates = State.ipos.filter(i=> !i.ipoType && /\bsme\b/i.test(i.name||''));
+  if(candidates.length===0){
+    toast('No untagged SME IPOs found — nothing to change');
+    return;
+  }
+  openModal(`
+    <div class="modal">
+      <h3>Tag ${candidates.length} IPO${candidates.length>1?'s':''} as SME?</h3>
+      <p style="font-size:13px;color:var(--ink-dim);margin:0 0 10px;">These have "SME" in the name and no type set yet:</p>
+      <div class="card" style="padding:4px 12px;max-height:200px;overflow-y:auto;">
+        ${candidates.map(i=>`<div class="meta" style="padding:6px 0;">${esc(i.name)}</div>`).join('')}
+      </div>
+      <p style="font-size:12px;color:var(--ink-faint);margin-top:10px;">You can switch any of these back to Mainboard individually afterwards by editing the IPO.</p>
+      <div class="modal-actions">
+        <button class="btn ghost" data-close="1">Cancel</button>
+        <button class="btn primary" id="confirm-sme-fix">Tag as SME</button>
+      </div>
+    </div>
+  `);
+  document.getElementById('confirm-sme-fix').addEventListener('click', async ()=>{
+    for(const ipo of candidates){
+      ipo.ipoType = 'sme';
+      if(!ipo.minLots || ipo.minLots<2) ipo.minLots = 2; // sensible SME default, editable after
+      await idbPut('ipos', ipo);
+    }
+    closeModal();
+    toast(`Tagged ${candidates.length} IPO${candidates.length>1?'s':''} as SME`);
+    render();
+  });
+}
 function confirmDeleteIpo(id){
   openModal(`
     <div class="modal">
@@ -1832,6 +1863,11 @@ function renderSettings(main){
         <button class="btn danger" id="s-wipe">${ICONS.trash} Erase all data</button>
       </div>
     </div>
+    <div class="section-label">One-time fixes</div>
+    <div class="card">
+      <p style="font-size:13px;color:var(--ink-dim);margin:0 0 12px;">IPOs added before the SME/Mainboard split have no type set, so they all default to Mainboard. This scans your existing IPOs and tags any with "SME" in the name as SME — it won't touch ones that already have a type set correctly.</p>
+      <button class="btn ghost" id="s-fix-sme">${ICONS.ipo} Auto-detect SME IPOs</button>
+    </div>
   `;
   const installBtn = document.getElementById('install-btn');
   if(installBtn) installBtn.addEventListener('click', async ()=>{
@@ -1849,6 +1885,7 @@ function renderSettings(main){
   main.querySelectorAll('[data-goto]').forEach(b=>b.addEventListener('click',()=>go(b.dataset.goto)));
   document.getElementById('s-export').addEventListener('click', exportBackup);
   document.getElementById('s-import').addEventListener('click', triggerImport);
+  document.getElementById('s-fix-sme').addEventListener('click', autoDetectSmeIpos);
   document.getElementById('s-wipe').addEventListener('click', ()=>{
     openModal(`
       <div class="modal">
