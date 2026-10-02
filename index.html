@@ -1509,33 +1509,48 @@ function openIpoModal(ipo, prefillName){
   });
 }
 async function autoDetectSmeIpos(){
-  const candidates = State.ipos.filter(i=> !i.ipoType && /\bsme\b/i.test(i.name||''));
+  const SME_THRESHOLD = 90000; // amount-per-lot above this is almost always SME, not mainboard
+  const untyped = State.ipos.filter(i=>!i.ipoType);
+  const candidates = untyped.filter(i=> ipoLotAmount(i) >= SME_THRESHOLD);
+  const skippedNoAmount = untyped.filter(i=> ipoLotAmount(i)===0);
+
   if(candidates.length===0){
-    toast('No untagged SME IPOs found — nothing to change');
+    toast(skippedNoAmount.length>0
+      ? `No clear SME matches — ${skippedNoAmount.length} IPO(s) have no price/lot size set yet, so they can't be checked`
+      : 'No untagged SME IPOs found — nothing to change');
     return;
   }
   openModal(`
     <div class="modal">
       <h3>Tag ${candidates.length} IPO${candidates.length>1?'s':''} as SME?</h3>
-      <p style="font-size:13px;color:var(--ink-dim);margin:0 0 10px;">These have "SME" in the name and no type set yet:</p>
-      <div class="card" style="padding:4px 12px;max-height:200px;overflow-y:auto;">
-        ${candidates.map(i=>`<div class="meta" style="padding:6px 0;">${esc(i.name)}</div>`).join('')}
+      <p style="font-size:13px;color:var(--ink-dim);margin:0 0 10px;">These have an amount per lot of ₹${(SME_THRESHOLD).toLocaleString('en-IN')}+, which is the SME norm (mainboard lots are usually ~₹15,000). Untick any that are wrong:</p>
+      <div class="card" style="padding:4px 12px;max-height:220px;overflow-y:auto;">
+        ${candidates.map(i=>`
+          <label class="check" style="padding:8px 4px;">
+            <input type="checkbox" class="sme-fix-check" data-sme-id="${i.id}" checked style="width:18px;height:18px;accent-color:var(--gold);flex-shrink:0;">
+            <span class="name">${esc(i.name)}</span>
+            <span class="tag tabular">${fmtMoney(ipoLotAmount(i))}</span>
+          </label>
+        `).join('')}
       </div>
-      <p style="font-size:12px;color:var(--ink-faint);margin-top:10px;">You can switch any of these back to Mainboard individually afterwards by editing the IPO.</p>
+      ${skippedNoAmount.length>0?`<p style="font-size:12px;color:var(--ink-faint);margin-top:10px;">${skippedNoAmount.length} other untagged IPO(s) have no price/lot size entered, so couldn't be checked — tag those manually once you fill in their details.</p>`:''}
+      <p style="font-size:12px;color:var(--ink-faint);margin-top:6px;">This is a heuristic based on amount, not certain.</p>
       <div class="modal-actions">
         <button class="btn ghost" data-close="1">Cancel</button>
-        <button class="btn primary" id="confirm-sme-fix">Tag as SME</button>
+        <button class="btn primary" id="confirm-sme-fix">Tag selected as SME</button>
       </div>
     </div>
   `);
   document.getElementById('confirm-sme-fix').addEventListener('click', async ()=>{
-    for(const ipo of candidates){
+    const checked = Array.from(document.querySelectorAll('.sme-fix-check:checked')).map(el=>el.dataset.smeId);
+    const toTag = candidates.filter(i=>checked.includes(i.id));
+    for(const ipo of toTag){
       ipo.ipoType = 'sme';
       if(!ipo.minLots || ipo.minLots<2) ipo.minLots = 2; // sensible SME default, editable after
       await idbPut('ipos', ipo);
     }
     closeModal();
-    toast(`Tagged ${candidates.length} IPO${candidates.length>1?'s':''} as SME`);
+    toast(toTag.length>0 ? `Tagged ${toTag.length} IPO${toTag.length>1?'s':''} as SME` : 'No changes made');
     render();
   });
 }
