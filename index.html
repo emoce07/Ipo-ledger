@@ -678,7 +678,7 @@ function renderDashboard(main){
 
     <div class="grid cols-4">
       <div class="stat"><div class="label">Total IPO profit</div><div class="value ${profit>=0?'pos':'neg'} tabular">${fmtMoney(profit)}</div></div>
-      <div class="stat"><div class="label">Total money in banks</div><div class="value gold tabular">${fmtMoney(totalMoney)}</div></div>
+      <div class="stat" id="banks-overview-card" style="cursor:pointer;"><div class="label">Total money in banks</div><div class="value gold tabular">${fmtMoney(totalMoney)}</div></div>
       <div class="stat"><div class="label">Currently blocked</div><div class="value tabular">${fmtMoney(blocked)}</div></div>
       <div class="stat"><div class="label">Refund pending</div><div class="value tabular">${fmtMoney(refundPending)}</div></div>
     </div>
@@ -706,6 +706,54 @@ function renderDashboard(main){
     State.applyFlow = {ipoId: el.dataset.gotoIpo, bankId:null, selected:new Set()};
     go('apply');
   }));
+  const banksCard = document.getElementById('banks-overview-card');
+  if(banksCard) banksCard.addEventListener('click', openBanksOverviewModal);
+}
+function openBanksOverviewModal(){
+  const recentTransfers = State.transfers.slice().sort((a,b)=>(b.date||'').localeCompare(a.date||'')).slice(0,8);
+  openModal(`
+    <div class="modal" style="max-width:480px;">
+      <h3>Banks overview</h3>
+      ${State.banks.length===0 ? `<div class="empty-state"><div class="t">No banks yet</div><div class="s">Add a bank to start tracking money.</div></div>` : `
+        <div style="display:flex;flex-direction:column;gap:8px;">
+          ${State.banks.map(b=>{
+            const avail = bankAvailable(b.id);
+            const blocked = bankBlocked(b.id);
+            return `<div class="card" style="padding:12px 14px;">
+              <div class="row">
+                <div style="font-weight:600;font-size:14px;">${esc(b.name)}</div>
+                <div class="tabular" style="font-weight:650;color:var(--gold);">${fmtMoney(avail)}</div>
+              </div>
+              ${blocked>0?`<div class="meta tabular" style="margin-top:4px;">Blocked: ${fmtMoney(blocked)}</div>`:''}
+            </div>`;
+          }).join('')}
+        </div>
+      `}
+      <button class="btn primary block" id="overview-transfer-btn" style="margin-top:16px;" ${State.banks.length<2?'disabled':''}>${ICONS.transfer} Transfer money between banks</button>
+      ${State.banks.length<2?`<div style="font-size:12px;color:var(--ink-faint);margin-top:6px;">Add at least 2 banks to transfer between them.</div>`:''}
+
+      <div class="section-label" style="margin-top:20px;">Recent transfers</div>
+      ${recentTransfers.length===0 ? `<div class="meta" style="padding:8px 0;">No transfers yet</div>` : `
+        <div class="card" style="padding:4px 12px;">
+          ${recentTransfers.map(t=>`
+            <div class="list-item">
+              <div class="main">
+                <div class="title" style="font-size:13px;">${esc(bankById(t.fromBankId)?.name||'—')} → ${esc(bankById(t.toBankId)?.name||'—')}</div>
+                <div class="meta">${fmtDate(t.date)}${t.note?' · '+esc(t.note):''}</div>
+              </div>
+              <div class="money tabular">${fmtMoney(t.amount)}</div>
+            </div>
+          `).join('')}
+        </div>
+        ${State.transfers.length>8?`<div style="text-align:center;margin-top:8px;"><a href="#" class="link" id="view-all-transfers" style="font-size:12.5px;">View all ${State.transfers.length} transfers</a></div>`:''}
+      `}
+      <div class="modal-actions"><button class="btn ghost" data-close="1" style="flex:1;">Close</button></div>
+    </div>
+  `);
+  const tBtn = document.getElementById('overview-transfer-btn');
+  if(tBtn && State.banks.length>=2) tBtn.addEventListener('click', openTransferModal);
+  const viewAll = document.getElementById('view-all-transfers');
+  if(viewAll) viewAll.addEventListener('click', (e)=>{ e.preventDefault(); closeModal(); go('transfers'); });
 }
 function attnRow(a){
   return `<div class="row" style="padding:8px 0;cursor:pointer;" data-goto-ipo="${a.ipo.id}">
@@ -948,8 +996,7 @@ function renderApplications(main){
         <select id="filt-status">
           <option value="">All statuses</option>
           <option value="pending" ${f.status==='pending'?'selected':''}>Pending</option>
-          <option value="not_allotted" ${f.status==='not_allotted'?'selected':''}>Not allotted</option>
-          <option value="partial" ${f.status==='partial'?'selected':''}>Partial</option>
+          <option value="not_allotted" ${f.status==='not_allotted'?'selected':''}>Not allotted — refunded</option>
           <option value="allotted" ${f.status==='allotted'?'selected':''}>Allotted</option>
         </select>
       </label>
@@ -1217,7 +1264,7 @@ function renderApplicantDetail(applicantId){
   `;
 }
 function allotmentBadge(a){
-  const map = {pending:['closing','Pending'], not_allotted:['closed','Not allotted'], allotted:['listed','Allotted'], partial:['allot','Partial']};
+  const map = {pending:['closing','Pending'], not_allotted:['closed','Not allotted — refunded'], allotted:['listed','Allotted']};
   const [cls,label] = map[a.allotmentStatus]||['closed','Pending'];
   return `<span class="badge ${cls}">${label}</span>`;
 }
@@ -1645,53 +1692,35 @@ function openAllotmentModal(ipoId){
             <div class="meta tabular" style="margin:4px 0 10px;">Applied ${fmtMoney(a.amount)}</div>
             <div style="display:flex;gap:6px;flex-wrap:wrap;">
               <button class="btn sm ${a.allotmentStatus==='not_allotted'?'primary':'ghost'}" data-set-status="${a.id}" data-status="not_allotted">Not allotted</button>
-              <button class="btn sm ${a.allotmentStatus==='allotted'?'primary':'ghost'}" data-set-status="${a.id}" data-status="allotted">Fully allotted</button>
-              <button class="btn sm ${a.allotmentStatus==='partial'?'primary':'ghost'}" data-set-status="${a.id}" data-status="partial">Partial</button>
+              <button class="btn sm ${a.allotmentStatus==='allotted'?'primary':'ghost'}" data-set-status="${a.id}" data-status="allotted">Allotted</button>
             </div>
-            <div id="allot-extra-${a.id}" style="margin-top:10px;"></div>
+            ${a.allotmentStatus!=='pending' ? `<div class="meta tabular" style="margin-top:8px;">${a.allotmentStatus==='not_allotted'?`Refunded (unblocked): <b>${fmtMoney(a.refundedAmount||0)}</b>`:`Allotted amount: <b>${fmtMoney(a.allottedAmount||0)}</b> · nothing to refund`}</div>` : ''}
           </div>`;
         }).join('')}
       </div>`}
       <div class="modal-actions"><button class="btn ghost" data-close="1" style="flex:1;">Close</button></div>
     </div>
   `);
-  apps.forEach(a=>renderAllotExtra(a));
   document.querySelectorAll('[data-set-status]').forEach(btn=>btn.addEventListener('click', async ()=>{
     const appId = btn.dataset.setStatus; const status = btn.dataset.status;
     const app = State.applications.find(x=>x.id===appId);
     app.allotmentStatus = status;
-    if(status==='not_allotted'){ app.allottedAmount = 0; }
-    if(status==='allotted'){ app.allottedAmount = app.amount; }
+    if(status==='not_allotted'){
+      // Not allotted: the full applied amount is unblocked/refunded automatically.
+      app.allottedAmount = 0;
+      app.refundedAmount = app.amount||0;
+      app.refundDate = app.refundDate || todayStr();
+    }
+    if(status==='allotted'){
+      // Allotted: the applied amount converted to shares — nothing left to refund.
+      app.allottedAmount = app.amount||0;
+      app.refundedAmount = 0;
+      app.refundDate = null;
+    }
     await idbPut('applications', app);
     openAllotmentModal(ipoId); // re-render modal
+    render();
   }));
-}
-function renderAllotExtra(a){
-  const el = document.getElementById(`allot-extra-${a.id}`);
-  if(!el) return;
-  if(a.allotmentStatus==='pending'){ el.innerHTML=''; return; }
-  const applied = a.amount||0;
-  const allotted = a.allottedAmount||0;
-  const refunded = a.refundedAmount||0;
-  const owed = Math.max(0, applied-allotted);
-  const pending = Math.max(0, owed-refunded);
-  el.innerHTML = `
-    <div class="hr"></div>
-    <div class="grid cols-2" style="gap:8px;">
-      <label class="field">Allotted amount (₹)<input type="number" class="allot-amt" data-app="${a.id}" value="${allotted}"></label>
-      <label class="field">Refunded so far (₹)<input type="number" class="refund-amt" data-app="${a.id}" value="${refunded}"></label>
-    </div>
-    <div class="meta tabular" style="margin-top:8px;">Still pending refund: <b>${fmtMoney(pending)}</b></div>
-    <button class="btn sm ghost" data-save-amounts="${a.id}" style="margin-top:8px;">Save amounts</button>
-  `;
-  el.querySelector('[data-save-amounts]').addEventListener('click', async ()=>{
-    const app = State.applications.find(x=>x.id===a.id);
-    app.allottedAmount = Number(el.querySelector('.allot-amt').value)||0;
-    app.refundedAmount = Number(el.querySelector('.refund-amt').value)||0;
-    if(app.refundedAmount>0 && !app.refundDate) app.refundDate = todayStr();
-    await idbPut('applications', app);
-    toast('Amounts updated'); render();
-  });
 }
 
 /* ==================== SETTINGS ==================== */
