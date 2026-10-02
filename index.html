@@ -355,7 +355,7 @@ function idbClear(store){
 const State = {
   banks: [], applicants: [], ipos: [], applications: [], transfers: [], sales: [],
   route: 'dashboard',
-  applyFlow: { ipoId: null, bankId: null, selected: new Set() },
+  applyFlow: { ipoId: null, bankId: null, selected: new Map() }, // applicantId -> lot count
 };
 
 function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,8); }
@@ -703,7 +703,7 @@ function renderDashboard(main){
     ${renderIpoStrip(State.ipos.filter(i=>ipoStatus(i).key==='open'))}
   `;
   main.querySelectorAll('[data-goto-ipo]').forEach(el=>el.addEventListener('click',()=>{
-    State.applyFlow = {ipoId: el.dataset.gotoIpo, bankId:null, selected:new Set()};
+    State.applyFlow = {ipoId: el.dataset.gotoIpo, bankId:null, selected:new Map()};
     go('apply');
   }));
   const banksCard = document.getElementById('banks-overview-card');
@@ -825,7 +825,7 @@ function renderApply(main){
         <div class="sub">${ipoStatus(i).label} · ${fmtDate(i.openDate)}–${fmtDate(i.closeDate)}</div>
       </div>`).join('')}</div>`;
     dropdown.querySelectorAll('[data-pick]').forEach(el=>el.addEventListener('click',()=>{
-      flow.ipoId = el.dataset.pick; flow.bankId=null; flow.selected=new Set();
+      flow.ipoId = el.dataset.pick; flow.bankId=null; flow.selected=new Map();
       closeDropdown();
       searchInput.value = ipoById(flow.ipoId).name;
       renderApplyDetails();
@@ -888,7 +888,7 @@ function renderApply(main){
       </div>
     `;
     bankSlot.querySelectorAll('[data-bank]').forEach(el=>el.addEventListener('click',()=>{
-      flow.bankId = el.dataset.bank; flow.selected = new Set();
+      flow.bankId = el.dataset.bank; flow.selected = new Map();
       renderApplyDetails();
     }));
 
@@ -904,41 +904,65 @@ function renderApply(main){
       return;
     }
 
+    const lotAmt = ipoLotAmount(ipo);
+    const minLots = Math.max(1, Number(ipo.minLots)||1);
+
     applicantSlot.innerHTML = `
       <div class="row" style="margin-top:22px;">
         <div class="section-label" style="margin:0;">${esc(bank.name)}</div>
         <div style="font-size:12px;color:var(--ink-faint);" class="tabular">Available ${fmtMoney(avail)} · Blocked ${fmtMoney(blocked)}</div>
       </div>
+      ${minLots>1?`<div style="font-size:12px;color:var(--gold);margin-bottom:8px;">This is an SME IPO — minimum ${minLots} lots per application.</div>`:''}
       <div class="card" style="padding:6px 12px;">
         ${State.applicants.map(a=>{
           const existing = existingApps.find(e=>e.applicantId===a.id);
           const disabled = !!existing;
           const on = flow.selected.has(a.id);
-          return `<div class="check ${on?'on':''} ${disabled?'disabled':''}" data-applicant="${a.id}" ${disabled?'':''}>
-            <div class="box">${on?ICONS.check:''}</div>
-            <div class="name">${esc(a.name)}</div>
-            ${existing ? `<span class="tag">✅ Applied — ${esc(bankById(existing.bankId)?.name||'')}</span>` : ''}
+          const lots = flow.selected.get(a.id) || minLots;
+          return `<div class="check ${on?'on':''} ${disabled?'disabled':''}" data-applicant="${disabled?'':a.id}">
+            <div class="box" data-tick="${a.id}" style="${disabled?'':'cursor:pointer;'}">${on||disabled?ICONS.check:''}</div>
+            <div class="name" data-tick="${a.id}" style="${disabled?'':'cursor:pointer;'}">${esc(a.name)}</div>
+            ${existing ? `<span class="tag">✅ Applied — ${esc(bankById(existing.bankId)?.name||'')}</span>` : on ? `
+              <div style="display:flex;align-items:center;gap:6px;" data-lotctrl="${a.id}">
+                <button class="iconbtn" data-lot-dec="${a.id}" style="border:1px solid var(--line);border-radius:6px;">−</button>
+                <span class="tabular" style="min-width:52px;text-align:center;font-size:13px;">${lots} lot${lots>1?'s':''}</span>
+                <button class="iconbtn" data-lot-inc="${a.id}" style="border:1px solid var(--line);border-radius:6px;">+</button>
+              </div>
+            ` : ''}
           </div>`;
         }).join('')}
       </div>
       <div id="apply-summary"></div>
     `;
-    applicantSlot.querySelectorAll('.check:not(.disabled)').forEach(el=>el.addEventListener('click',()=>{
-      const id = el.dataset.applicant;
-      if(flow.selected.has(id)) flow.selected.delete(id); else flow.selected.add(id);
+    applicantSlot.querySelectorAll('[data-tick]').forEach(el=>el.addEventListener('click',()=>{
+      const id = el.dataset.tick;
+      if(flow.selected.has(id)) flow.selected.delete(id); else flow.selected.set(id, minLots);
+      renderApplyDetails();
+    }));
+    applicantSlot.querySelectorAll('[data-lot-inc]').forEach(el=>el.addEventListener('click',(e)=>{
+      e.stopPropagation();
+      const id = el.dataset.lotInc;
+      flow.selected.set(id, (flow.selected.get(id)||minLots)+1);
+      renderApplyDetails();
+    }));
+    applicantSlot.querySelectorAll('[data-lot-dec]').forEach(el=>el.addEventListener('click',(e)=>{
+      e.stopPropagation();
+      const id = el.dataset.lotDec;
+      const next = Math.max(minLots, (flow.selected.get(id)||minLots)-1);
+      flow.selected.set(id, next);
       renderApplyDetails();
     }));
 
     const count = flow.selected.size;
-    const lotAmt = ipoLotAmount(ipo);
-    const estTotal = count*lotAmt;
+    const totalLots = Array.from(flow.selected.values()).reduce((s,n)=>s+n,0);
+    const estTotal = totalLots*lotAmt;
     document.getElementById('apply-summary').innerHTML = count>0 ? `
       ${lotAmt===0 ? `<div style="font-size:12px;color:var(--rust);margin-top:14px;">This IPO has no lot size / max price set, so the amount will be recorded as ₹0. Edit the IPO first to set them accurately.</div>` : ''}
       <div class="row" style="margin-top:14px;">
-        <div style="font-size:13px;color:var(--ink-dim);">${count} applicant${count>1?'s':''} selected</div>
-        <div style="font-size:14px;font-weight:650;" class="tabular">${count} × ${fmtMoney(lotAmt)} = ${fmtMoney(estTotal)}</div>
+        <div style="font-size:13px;color:var(--ink-dim);">${count} applicant${count>1?'s':''} · ${totalLots} lot${totalLots>1?'s':''} total</div>
+        <div style="font-size:14px;font-weight:650;" class="tabular">${totalLots} × ${fmtMoney(lotAmt)} = ${fmtMoney(estTotal)}</div>
       </div>
-      <button class="btn primary block" id="mark-applied-btn" style="margin-top:12px;" ${estTotal>avail?'':''}>
+      <button class="btn primary block" id="mark-applied-btn" style="margin-top:12px;">
         Mark selected as applied
       </button>
       ${estTotal>avail? `<div style="font-size:12px;color:var(--rust);margin-top:8px;">Amount exceeds available balance in ${esc(bank.name)} (${fmtMoney(avail)} available). You can still proceed if this is expected.</div>`:''}
@@ -950,21 +974,24 @@ function renderApply(main){
   if(ipo) renderApplyDetails();
 }
 
-async function markSelectedApplied(ipo, bank, lot){
+async function markSelectedApplied(ipo, bank, lotAmt){
   const flow = State.applyFlow;
-  const ids = Array.from(flow.selected);
-  for(const applicantId of ids){
+  const entries = Array.from(flow.selected.entries()); // [applicantId, lots]
+  let totalAmount = 0;
+  for(const [applicantId, lots] of entries){
+    const amount = lots*lotAmt;
+    totalAmount += amount;
     const app = {
       id: uid(), ipoId: ipo.id, applicantId, bankId: bank.id,
-      amount: lot, appliedDate: todayStr(),
-      allotmentStatus: 'pending', // pending | not_allotted | allotted | partial
+      lots, amount, appliedDate: todayStr(),
+      allotmentStatus: 'pending', // pending | not_allotted | allotted
       allottedAmount: 0, refundedAmount: 0, refundDate: null,
     };
     await idbPut('applications', app);
     State.applications.push(app);
   }
-  flow.selected = new Set();
-  toast(`✅ ${ids.length} application${ids.length>1?'s':''} marked as applied — ${bank.name}, ${fmtMoney(ids.length*lot)}`);
+  flow.selected = new Map();
+  toast(`✅ ${entries.length} application${entries.length>1?'s':''} marked as applied — ${bank.name}, ${fmtMoney(totalAmount)}`);
   render();
   // restore flow state after full re-render
   State.applyFlow.ipoId = ipo.id; State.applyFlow.bankId = bank.id;
@@ -1035,7 +1062,7 @@ function renderApplications(main){
           return `<div class="list-item">
             <div class="main" style="cursor:pointer;flex:1;" data-open-ipo="${a.ipoId}">
               <div class="title">${esc(applicant?applicant.name:'Unknown')} · ${esc(ipo?ipo.name:'Unknown IPO')}</div>
-              <div class="meta tabular">${esc(bank?bank.name:'Unknown bank')} · ${fmtDate(a.appliedDate)} · ${fmtMoney(a.amount)}</div>
+              <div class="meta tabular">${esc(bank?bank.name:'Unknown bank')} · ${fmtDate(a.appliedDate)} · ${a.lots?a.lots+' lot'+(a.lots>1?'s':'')+' · ':''}${fmtMoney(a.amount)}</div>
             </div>
             ${allotmentBadge(a)}
             <div class="actions">
@@ -1313,6 +1340,12 @@ async function syncLiveIpos(){
       obj.notes = item.notes || obj.notes || '';
       obj.gmpPercent = (item.gmpPercent!=null && item.gmpPercent!=='') ? Number(item.gmpPercent) : (obj.gmpPercent ?? null);
       obj.gmpPrice = (item.gmpPrice!=null && item.gmpPrice!=='') ? Number(item.gmpPrice) : (obj.gmpPrice ?? null);
+      // IPO type: trust an explicit feed value; otherwise infer from the name
+      // (InvestorGain typically labels SME issues directly in the name), and
+      // never downgrade a type the user has already set manually.
+      if(item.ipoType==='sme' || item.ipoType==='mainboard') obj.ipoType = item.ipoType;
+      else if(!obj.ipoType) obj.ipoType = /\bsme\b/i.test(item.name) ? 'sme' : 'mainboard';
+      obj.minLots = Number(item.minLots) || obj.minLots || 1;
       await idbPut('ipos', obj);
       if(existing) updated++; else { State.ipos.push(obj); added++; }
     }
@@ -1329,9 +1362,13 @@ async function syncLiveIpos(){
 
 function renderIpos(main){
   main._ipoTab = main._ipoTab || 'active';
+  main._ipoTypeTab = main._ipoTypeTab || 'mainboard';
   const tab = main._ipoTab;
+  const typeTab = main._ipoTypeTab;
   const lastSync = localStorage.getItem('ipo-feed-last-sync');
   const feedUpdatedAt = localStorage.getItem('ipo-feed-updated-at');
+  const smeCount = State.ipos.filter(i=>i.ipoType==='sme').length;
+  const mainboardCount = State.ipos.length - smeCount;
   main.innerHTML = `
     <div class="row"><h1 class="page-title">IPOs</h1>
       <div style="display:flex;gap:8px;">
@@ -1343,6 +1380,10 @@ function renderIpos(main){
       ${lastSync ? ` · Last synced ${new Date(lastSync).toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}${feedUpdatedAt?` (feed dated ${feedUpdatedAt})`:''}` : ' · Not synced yet'}
     </p>
     <div class="pill-tabs">
+      <button data-type-tab="mainboard" class="${typeTab==='mainboard'?'active':''}">Mainboard (${mainboardCount})</button>
+      <button data-type-tab="sme" class="${typeTab==='sme'?'active':''}">SME (${smeCount})</button>
+    </div>
+    <div class="pill-tabs">
       <button data-tab="active" class="${tab==='active'?'active':''}">Active & upcoming</button>
       <button data-tab="all" class="${tab==='all'?'active':''}">All</button>
     </div>
@@ -1351,10 +1392,12 @@ function renderIpos(main){
   document.getElementById('add-ipo').addEventListener('click',()=>openIpoModal(null));
   document.getElementById('sync-ipos-btn').addEventListener('click', syncLiveIpos);
   main.querySelectorAll('[data-tab]').forEach(b=>b.addEventListener('click',()=>{ main._ipoTab=b.dataset.tab; renderIpos(main); }));
-  const list = tab==='active' ? State.ipos.filter(i=>ipoStatus(i).key!=='listed' && ipoStatus(i).key!=='closed') : State.ipos.slice();
+  main.querySelectorAll('[data-type-tab]').forEach(b=>b.addEventListener('click',()=>{ main._ipoTypeTab=b.dataset.typeTab; renderIpos(main); }));
+  let list = State.ipos.filter(i=> (i.ipoType||'mainboard')===typeTab );
+  if(tab==='active') list = list.filter(i=>ipoStatus(i).key!=='listed' && ipoStatus(i).key!=='closed');
   list.sort((a,b)=>(a.openDate||'').localeCompare(b.openDate||''));
   const listEl = document.getElementById('ipo-list');
-  listEl.innerHTML = list.length===0 ? `<div class="empty-state">${ICONS.ipo}<div class="t">No IPOs here</div><div class="s">Add one to get started.</div></div>` : `
+  listEl.innerHTML = list.length===0 ? `<div class="empty-state">${ICONS.ipo}<div class="t">No ${typeTab==='sme'?'SME':'Mainboard'} IPOs here</div><div class="s">Add one, or switch tabs / sync live IPOs.</div></div>` : `
     <div class="card" style="padding:6px 12px;">
       ${list.map(ipo=>{
         const st = ipoStatus(ipo);
@@ -1374,7 +1417,7 @@ function renderIpos(main){
   `;
   listEl.querySelectorAll('[data-edit-ipo]').forEach(el=>el.addEventListener('click',()=>openIpoModal(ipoById(el.dataset.editIpo))));
   listEl.querySelectorAll('[data-del-ipo]').forEach(el=>el.addEventListener('click',()=>confirmDeleteIpo(el.dataset.delIpo)));
-  listEl.querySelectorAll('[data-view-ipo]').forEach(el=>el.addEventListener('click',()=>{ go('apply'); State.applyFlow={ipoId:el.dataset.viewIpo, bankId:null, selected:new Set()}; render(); }));
+  listEl.querySelectorAll('[data-view-ipo]').forEach(el=>el.addEventListener('click',()=>{ go('apply'); State.applyFlow={ipoId:el.dataset.viewIpo, bankId:null, selected:new Map()}; render(); }));
 }
 function openIpoModal(ipo, prefillName){
   const isEdit = !!ipo;
@@ -1385,6 +1428,12 @@ function openIpoModal(ipo, prefillName){
       <div class="grid" style="gap:10px;">
         <label class="field">IPO name<input type="text" id="f-name" value="${esc(f.name||prefillName||'')}"></label>
         <label class="field">Company name<input type="text" id="f-company" value="${esc(f.company||'')}"></label>
+        <label class="field">IPO type
+          <select id="f-type">
+            <option value="mainboard" ${(f.ipoType||'mainboard')==='mainboard'?'selected':''}>Mainboard</option>
+            <option value="sme" ${f.ipoType==='sme'?'selected':''}>SME</option>
+          </select>
+        </label>
         <div class="grid cols-2">
           <label class="field">Opening date<input type="date" id="f-open" value="${f.openDate||''}"></label>
           <label class="field">Closing date<input type="date" id="f-close" value="${f.closeDate||''}"></label>
@@ -1399,6 +1448,7 @@ function openIpoModal(ipo, prefillName){
           <label class="field">Max price / share (₹)<input type="number" id="f-maxprice" value="${f.maxPrice||''}" placeholder="e.g. 34"></label>
           <label class="field">Lot size (shares per lot)<input type="number" id="f-lot" value="${f.lotSize||''}" placeholder="e.g. 400"></label>
         </div>
+        <label class="field">Minimum lots required to apply<input type="number" id="f-minlots" min="1" value="${f.minLots||1}" placeholder="e.g. 2 for SME IPOs"></label>
         <div class="stat" id="lot-amount-preview" style="padding:10px 14px;"></div>
         <label class="field">Registrar<input type="text" id="f-registrar" value="${esc(f.registrar||'')}"></label>
         <label class="field">Registrar website (URL)<input type="text" id="f-registrar-url" value="${esc(f.registrarUrl||'')}" placeholder="https://..."></label>
@@ -1413,8 +1463,13 @@ function openIpoModal(ipo, prefillName){
   const updatePreview = ()=>{
     const maxPrice = Number(document.getElementById('f-maxprice').value)||0;
     const lot = Number(document.getElementById('f-lot').value)||0;
+    const minLots = Math.max(1, Number(document.getElementById('f-minlots').value)||1);
     const amt = maxPrice*lot;
-    document.getElementById('lot-amount-preview').innerHTML = `<div class="label">Amount blocked per lot (auto-calculated)</div><div class="value gold tabular">${fmtMoney(amt)}</div>`;
+    const minAmt = amt*minLots;
+    document.getElementById('lot-amount-preview').innerHTML = `
+      <div class="label">Amount per lot (auto-calculated)</div><div class="value gold tabular">${fmtMoney(amt)}</div>
+      ${minLots>1?`<div class="label" style="margin-top:8px;">Minimum investment (${minLots} lots)</div><div class="value tabular">${fmtMoney(minAmt)}</div>`:''}
+    `;
   };
   // Typing/pasting a price band (e.g. "₹123–₹130") auto-fills Max price with
   // the upper end of the band, so the blocked amount stays correct without
@@ -1427,6 +1482,7 @@ function openIpoModal(ipo, prefillName){
   });
   document.getElementById('f-maxprice').addEventListener('input', updatePreview);
   document.getElementById('f-lot').addEventListener('input', updatePreview);
+  document.getElementById('f-minlots').addEventListener('input', updatePreview);
   updatePreview();
   document.getElementById('save-ipo').addEventListener('click', async ()=>{
     const name = document.getElementById('f-name').value.trim();
@@ -1442,6 +1498,8 @@ function openIpoModal(ipo, prefillName){
     obj.priceBand = document.getElementById('f-price').value.trim();
     obj.maxPrice = Number(document.getElementById('f-maxprice').value)||0;
     obj.lotSize = Number(document.getElementById('f-lot').value)||0;
+    obj.minLots = Math.max(1, Number(document.getElementById('f-minlots').value)||1);
+    obj.ipoType = document.getElementById('f-type').value;
     obj.registrar = document.getElementById('f-registrar').value.trim();
     obj.registrarUrl = document.getElementById('f-registrar-url').value.trim();
     obj.notes = document.getElementById('f-notes').value.trim();
@@ -1689,7 +1747,7 @@ function openAllotmentModal(ipoId){
           const applicant = applicantById(a.applicantId); const bank = bankById(a.bankId);
           return `<div class="card" data-app-row="${a.id}">
             <div class="row"><div style="font-weight:600;font-size:13.5px;">${esc(applicant?applicant.name:'—')}</div><div class="meta">${esc(bank?bank.name:'—')}</div></div>
-            <div class="meta tabular" style="margin:4px 0 10px;">Applied ${fmtMoney(a.amount)}</div>
+            <div class="meta tabular" style="margin:4px 0 10px;">Applied ${a.lots?a.lots+' lot'+(a.lots>1?'s':'')+' · ':''}${fmtMoney(a.amount)}</div>
             <div style="display:flex;gap:6px;flex-wrap:wrap;">
               <button class="btn sm ${a.allotmentStatus==='not_allotted'?'primary':'ghost'}" data-set-status="${a.id}" data-status="not_allotted">Not allotted</button>
               <button class="btn sm ${a.allotmentStatus==='allotted'?'primary':'ghost'}" data-set-status="${a.id}" data-status="allotted">Allotted</button>
