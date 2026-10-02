@@ -727,7 +727,10 @@ function ipoCard(ipo){
       </div>
       <span class="badge ${st.key}">${st.label}</span>
     </div>
-    ${applied>0?`<div style="margin-top:10px;font-size:12.5px;color:var(--ink-dim);">Applied: <b class="tabular">${fmtMoney(applied)}</b></div>`:''}
+    <div class="row" style="margin-top:10px;">
+      ${applied>0?`<div style="font-size:12.5px;color:var(--ink-dim);">Applied: <b class="tabular">${fmtMoney(applied)}</b></div>`:'<div></div>'}
+      ${ipo.gmpPercent!=null ? `<div style="font-size:12px;font-weight:600;color:${Number(ipo.gmpPercent)>0?'var(--green)':Number(ipo.gmpPercent)<0?'var(--rust)':'var(--ink-faint)'};">GMP ${Number(ipo.gmpPercent)>0?'+':''}${ipo.gmpPercent}%</div>` : ''}
+    </div>
   </div>`;
 }
 
@@ -813,6 +816,7 @@ function renderApply(main){
           <div class="f"><span>Listing</span><b>${fmtDate(ipo.listingDate)}</b></div>
           <div class="f"><span>Lot size</span><b class="tabular">${ipo.lotSize?ipo.lotSize+' shares':'—'}</b></div>
           <div class="f"><span>Amount per lot</span><b class="tabular">${ipoLotAmount(ipo)?fmtMoney(ipoLotAmount(ipo)):'—'}</b></div>
+          ${(ipo.gmpPercent!=null || ipo.gmpPrice!=null) ? `<div class="f"><span>GMP</span><b class="tabular" style="color:${Number(ipo.gmpPercent)>0?'var(--green)':Number(ipo.gmpPercent)<0?'var(--rust)':'var(--ink)'};">${ipo.gmpPrice!=null?'₹'+ipo.gmpPrice:''}${ipo.gmpPercent!=null?' ('+(Number(ipo.gmpPercent)>0?'+':'')+ipo.gmpPercent+'%)':''}</b></div>` : ''}
         </div>
       </div>
     `;
@@ -1260,6 +1264,8 @@ async function syncLiveIpos(){
       obj.registrar = item.registrar || obj.registrar || '';
       obj.registrarUrl = item.registrarUrl || obj.registrarUrl || '';
       obj.notes = item.notes || obj.notes || '';
+      obj.gmpPercent = (item.gmpPercent!=null && item.gmpPercent!=='') ? Number(item.gmpPercent) : (obj.gmpPercent ?? null);
+      obj.gmpPrice = (item.gmpPrice!=null && item.gmpPrice!=='') ? Number(item.gmpPrice) : (obj.gmpPrice ?? null);
       await idbPut('ipos', obj);
       if(existing) updated++; else { State.ipos.push(obj); added++; }
     }
