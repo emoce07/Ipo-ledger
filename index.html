@@ -1340,6 +1340,7 @@ async function syncLiveIpos(){
       obj.notes = item.notes || obj.notes || '';
       obj.gmpPercent = (item.gmpPercent!=null && item.gmpPercent!=='') ? Number(item.gmpPercent) : (obj.gmpPercent ?? null);
       obj.gmpPrice = (item.gmpPrice!=null && item.gmpPrice!=='') ? Number(item.gmpPrice) : (obj.gmpPrice ?? null);
+      obj.dataComplete = item.dataComplete!==false; // feed flags IPOs it couldn't fully fetch
       // IPO type: trust an explicit feed value; otherwise infer from the name
       // (InvestorGain typically labels SME issues directly in the name), and
       // never downgrade a type the user has already set manually.
@@ -1369,6 +1370,7 @@ function renderIpos(main){
   const feedUpdatedAt = localStorage.getItem('ipo-feed-updated-at');
   const smeCount = State.ipos.filter(i=>i.ipoType==='sme').length;
   const mainboardCount = State.ipos.length - smeCount;
+  const incompleteCount = State.ipos.filter(i=>i.dataComplete===false).length;
   main.innerHTML = `
     <div class="row"><h1 class="page-title">IPOs</h1>
       <div style="display:flex;gap:8px;">
@@ -1379,6 +1381,7 @@ function renderIpos(main){
     <p class="page-sub">Manage IPO details, dates and registrar info
       ${lastSync ? ` · Last synced ${new Date(lastSync).toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}${feedUpdatedAt?` (feed dated ${feedUpdatedAt})`:''}` : ' · Not synced yet'}
     </p>
+    ${incompleteCount>0 ? `<div class="card" style="border-color:var(--rust);margin-bottom:14px;padding:12px 14px;"><span style="font-size:13px;">⚠️ ${incompleteCount} IPO${incompleteCount>1?'s are':' is'} missing price/lot size from the live feed (shown with a "Needs info" tag below) — these can't be auto-classified as SME or correctly blocked until the source site publishes that data.</span></div>` : ''}
     <div class="pill-tabs">
       <button data-type-tab="mainboard" class="${typeTab==='mainboard'?'active':''}">Mainboard (${mainboardCount})</button>
       <button data-type-tab="sme" class="${typeTab==='sme'?'active':''}">SME (${smeCount})</button>
@@ -1406,6 +1409,7 @@ function renderIpos(main){
             <div class="title">${esc(ipo.name)}</div>
             <div class="meta">${fmtDate(ipo.openDate)}–${fmtDate(ipo.closeDate)} · ${ipoApplications(ipo.id).length} applications</div>
           </div>
+          ${ipo.dataComplete===false ? `<span class="badge closing" title="Price or lot size missing from the feed">Needs info</span>` : ''}
           <span class="badge ${st.key}">${st.label}</span>
           <div class="actions">
             <button class="iconbtn" data-edit-ipo="${ipo.id}">${ICONS.edit}</button>
@@ -1510,9 +1514,12 @@ function openIpoModal(ipo, prefillName){
 }
 async function autoDetectSmeIpos(){
   const SME_THRESHOLD = 90000; // amount-per-lot above this is almost always SME, not mainboard
-  const untyped = State.ipos.filter(i=>!i.ipoType);
-  const candidates = untyped.filter(i=> ipoLotAmount(i) >= SME_THRESHOLD);
-  const skippedNoAmount = untyped.filter(i=> ipoLotAmount(i)===0);
+  // Re-check every IPO currently marked mainboard (including the sync's own
+  // weaker name-based guess), not just ones with no type at all — the amount
+  // check here is more reliable than the sync's "SME in the name" heuristic.
+  const checkable = State.ipos.filter(i=> (i.ipoType||'mainboard')==='mainboard');
+  const candidates = checkable.filter(i=> ipoLotAmount(i) >= SME_THRESHOLD);
+  const skippedNoAmount = checkable.filter(i=> ipoLotAmount(i)===0);
 
   if(candidates.length===0){
     toast(skippedNoAmount.length>0
