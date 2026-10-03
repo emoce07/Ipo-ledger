@@ -1238,6 +1238,10 @@ function openApplicantModal(applicant){
       <label class="field">Name
         <input type="text" id="applicant-name" value="${applicant?esc(applicant.name):''}" placeholder="e.g. Person A">
       </label>
+      <label class="field" style="margin-top:12px;">PAN (optional)
+        <input type="text" id="applicant-pan" value="${applicant?esc(applicant.pan||''):''}" placeholder="e.g. ABCDE1234F" maxlength="10" style="text-transform:uppercase;">
+      </label>
+      <p style="font-size:11.5px;color:var(--ink-faint);margin:6px 0 0;">Stored only on this device — used to speed up checking allotment status on registrar sites. Never sent anywhere by this app.</p>
       <div class="modal-actions">
         <button class="btn ghost" data-close="1">Cancel</button>
         <button class="btn primary" id="save-applicant">Save</button>
@@ -1247,8 +1251,10 @@ function openApplicantModal(applicant){
   document.getElementById('save-applicant').addEventListener('click', async ()=>{
     const name = document.getElementById('applicant-name').value.trim();
     if(!name){ toast('Enter a name'); return; }
+    const pan = document.getElementById('applicant-pan').value.trim().toUpperCase();
     const obj = applicant || { id: uid() };
     obj.name = name;
+    obj.pan = pan;
     await idbPut('applicants', obj);
     if(!isEdit) State.applicants.push(obj);
     closeModal(); toast(isEdit?'Applicant updated':'Applicant added'); render();
@@ -1787,6 +1793,21 @@ function renderHistory(main){
     resultsEl.querySelectorAll('[data-open-allot]').forEach(el=>el.addEventListener('click',()=>openAllotmentModal(el.dataset.openAllot)));
   });
 }
+// Registrar portals require manually selecting the IPO and solving a CAPTCHA —
+// no registrar publishes a URL parameter to prefill PAN or skip this, so these
+// are just the correct homepage to land on; PAN is copied to the clipboard
+// separately so at least that part doesn't need retyping.
+const REGISTRAR_FALLBACK_URLS = {
+  'KFin Technologies': 'https://ipostatus.kfintech.com',
+  'KFintech': 'https://ipostatus.kfintech.com',
+  'Link Intime': 'https://linkintime.co.in/initial_offer/public-issues.html',
+  'MUFG Intime': 'https://linkintime.co.in/initial_offer/public-issues.html',
+  'Bigshare Services': 'https://ipo.bigshareonline.com/IPO_Status.html',
+  'Bigshare': 'https://ipo.bigshareonline.com/IPO_Status.html',
+  'Cameo Corporate Services': 'https://in.cameoindia.com/',
+  'Skyline Financial Services': 'https://www.skylinerta.com/ipo.php',
+  default: 'https://ipostatus.kfintech.com',
+};
 function openAllotmentModal(ipoId){
   const ipo = ipoById(ipoId);
   const apps = ipoApplications(ipoId);
@@ -1798,9 +1819,15 @@ function openAllotmentModal(ipoId){
       <div style="display:flex;flex-direction:column;gap:10px;">
         ${apps.map(a=>{
           const applicant = applicantById(a.applicantId); const bank = bankById(a.bankId);
+          const pan = applicant?.pan;
           return `<div class="card" data-app-row="${a.id}">
             <div class="row"><div style="font-weight:600;font-size:13.5px;">${esc(applicant?applicant.name:'—')}</div><div class="meta">${esc(bank?bank.name:'—')}</div></div>
             <div class="meta tabular" style="margin:4px 0 10px;">Applied ${a.lots?a.lots+' lot'+(a.lots>1?'s':'')+' · ':''}${fmtMoney(a.amount)}</div>
+            ${a.allotmentStatus==='pending' ? `
+              <button class="btn sm ghost" data-check-allotment="${a.id}" style="margin-bottom:8px;">
+                ${ICONS.external} Check allotment${pan?' (copies PAN)':''}
+              </button>
+            ` : ''}
             <div style="display:flex;gap:6px;flex-wrap:wrap;">
               <button class="btn sm ${a.allotmentStatus==='not_allotted'?'primary':'ghost'}" data-set-status="${a.id}" data-status="not_allotted">Not allotted</button>
               <button class="btn sm ${a.allotmentStatus==='allotted'?'primary':'ghost'}" data-set-status="${a.id}" data-status="allotted">Allotted</button>
@@ -1812,6 +1839,20 @@ function openAllotmentModal(ipoId){
       <div class="modal-actions"><button class="btn ghost" data-close="1" style="flex:1;">Close</button></div>
     </div>
   `);
+  document.querySelectorAll('[data-check-allotment]').forEach(btn=>btn.addEventListener('click', async ()=>{
+    const appId = btn.dataset.checkAllotment;
+    const app = State.applications.find(x=>x.id===appId);
+    const applicant = applicantById(app.applicantId);
+    const pan = applicant?.pan;
+    const url = ipo.registrarUrl || REGISTRAR_FALLBACK_URLS[ipo.registrar] || REGISTRAR_FALLBACK_URLS.default;
+    if(pan){
+      try{ await navigator.clipboard.writeText(pan); toast(`PAN copied — paste it on the registrar page`); }
+      catch(e){ toast(`Opening registrar site — PAN: ${pan}`); }
+    } else {
+      toast('No PAN saved for this applicant — add one in Applicants for faster checks');
+    }
+    window.open(url, '_blank', 'noopener');
+  }));
   document.querySelectorAll('[data-set-status]').forEach(btn=>btn.addEventListener('click', async ()=>{
     const appId = btn.dataset.setStatus; const status = btn.dataset.status;
     const app = State.applications.find(x=>x.id===appId);
