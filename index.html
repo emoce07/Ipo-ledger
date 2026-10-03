@@ -553,7 +553,24 @@ const NAV = [
 ];
 const NAV_MOBILE = ['dashboard','apply','applications','ipos','settings'];
 
-function go(route){ State.route = route; render(); window.scrollTo(0,0); }
+const VALID_ROUTES = NAV.map(n=>n.key);
+function go(route, {replace=false}={}){
+  State.route = route;
+  const hash = '#'+route;
+  // Push a real history entry so the hardware/gesture Back button moves
+  // between in-app tabs first, instead of immediately exiting the app.
+  // Also keep the URL hash in sync so a refresh can restore this tab.
+  if(replace) history.replaceState({route}, '', hash);
+  else if(location.hash !== hash) history.pushState({route}, '', hash);
+  render();
+  window.scrollTo(0,0);
+}
+window.addEventListener('popstate', (e)=>{
+  const route = (e.state && e.state.route) || (location.hash||'').replace('#','') || 'dashboard';
+  State.route = VALID_ROUTES.includes(route) ? route : 'dashboard';
+  render();
+  window.scrollTo(0,0);
+});
 
 function renderShell(){
   const app = document.getElementById('app');
@@ -1995,7 +2012,12 @@ window.addEventListener('appinstalled', ()=>{ deferredInstallPrompt = null; toas
   }catch(e){
     console.error('DB init failed', e);
   }
-  render();
+  // Restore whichever tab the URL hash points to (e.g. after a refresh),
+  // falling back to dashboard. Use replaceState (not pushState) here so this
+  // initial load doesn't itself become a Back-button stop.
+  const initialRoute = (location.hash||'').replace('#','');
+  State.route = VALID_ROUTES.includes(initialRoute) ? initialRoute : 'dashboard';
+  go(State.route, {replace:true});
 })();
 </script>
 </body>
