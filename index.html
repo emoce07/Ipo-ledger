@@ -400,6 +400,18 @@ function parseMaxPriceFromBand(band){
   if(!nums || nums.length===0) return 0;
   return Math.max(...nums.map(Number));
 }
+// Normalizes an IPO name for matching during sync, so "Orient Cables (India)
+// IPO" and "Orient Cables IPO" are recognized as the same company instead of
+// creating a duplicate entry — strips the word IPO, "(India)"-style
+// parentheticals, Ltd/Limited, punctuation, and extra whitespace.
+function normalizeIpoName(name){
+  return String(name||'')
+    .toLowerCase()
+    .replace(/\(.*?\)/g, ' ')
+    .replace(/\b(ipo|limited|ltd|pvt|private)\b/g, ' ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
 
 async function loadAll(){
   [State.banks, State.applicants, State.ipos, State.applications, State.transfers, State.sales] =
@@ -1493,7 +1505,8 @@ async function syncLiveIpos(){
     let added=0, updated=0;
     for(const item of feed){
       if(!item.name) continue;
-      const existing = State.ipos.find(i=>i.name.trim().toLowerCase()===item.name.trim().toLowerCase());
+      const itemKey = normalizeIpoName(item.name);
+      const existing = State.ipos.find(i=> normalizeIpoName(i.name)===itemKey );
       const obj = existing || { id: uid() };
       obj.name = item.name;
       obj.company = item.company || obj.company || '';
@@ -1684,6 +1697,74 @@ function openIpoModal(ipo, prefillName){
     await idbPut('ipos', obj);
     if(!isEdit) State.ipos.push(obj);
     closeModal(); toast(isEdit?'IPO updated':'IPO added'); render();
+  });
+}
+async function findDuplicateIpos(){
+  const groups = new Map(); // normalizedKey -> [ipo, ipo, ...]
+  for(const ipo of State.ipos){
+    const key = normalizeIpoName(ipo.name);
+    if(!key) continue;
+    if(!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(ipo);
+  }
+  return Array.from(groups.values()).filter(g=>g.length>1);
+}
+async function mergeDuplicateIpos(){
+  const dupeGroups = await findDuplicateIpos();
+  if(dupeGroups.length===0){
+    toast('No duplicate IPOs found');
+    return;
+  }
+  // For each group, suggest keeping whichever entry has more data filled in
+  // (non-zero lot size / price / gmp beats a blank placeholder entry) —
+  // shown to the user to confirm, never applied silently.
+  const scoreIpo = (ipo) => (ipo.lotSize>0?1:0) + (ipo.maxPrice>0?1:0) + (ipo.gmpPercent!=null?1:0) + (ipo.registrar?1:0);
+  const plans = dupeGroups.map(group=>{
+    const sorted = [...group].sort((a,b)=> scoreIpo(b)-scoreIpo(a));
+    return { keep: sorted[0], remove: sorted.slice(1) };
+  });
+
+  openModal(`
+    <div class="modal" style="max-width:520px;">
+      <h3>${dupeGroups.length} duplicate IPO${dupeGroups.length>1?'s':''} found</h3>
+      <p style="font-size:13px;color:var(--ink-dim);margin:0 0 10px;">These look like the same IPO saved twice (usually because sync used a slightly different name before). The entry with more data filled in is kept; the other is removed.</p>
+      <div style="display:flex;flex-direction:column;gap:12px;max-height:320px;overflow-y:auto;">
+        ${plans.map((p,idx)=>{
+          const appsOnRemoved = p.remove.reduce((s,r)=>s+ipoApplications(r.id).length, 0);
+          return `
+          <div class="card" style="padding:12px;">
+            <div style="font-size:12px;color:var(--green);margin-bottom:4px;">✅ Keep: ${esc(p.keep.name)}</div>
+            <div class="meta tabular" style="margin-bottom:8px;">Lot size ${p.keep.lotSize||'—'} · Max price ${p.keep.maxPrice?fmtMoney(p.keep.maxPrice):'—'}${p.keep.gmpPercent!=null?' · GMP '+p.keep.gmpPercent+'%':''}</div>
+            ${p.remove.map(r=>`<div style="font-size:12px;color:var(--rust);">❌ Remove: ${esc(r.name)}</div>`).join('')}
+            ${appsOnRemoved>0?`<div style="font-size:11.5px;color:var(--gold);margin-top:6px;">⚠️ ${appsOnRemoved} application(s) on the removed entry will be moved to the kept one, not lost.</div>`:''}
+          </div>`;
+        }).join('')}
+      </div>
+      <div class="modal-actions">
+        <button class="btn ghost" data-close="1">Cancel</button>
+        <button class="btn primary" id="confirm-merge-dupes">Merge duplicates</button>
+      </div>
+    </div>
+  `);
+  document.getElementById('confirm-merge-dupes').addEventListener('click', async ()=>{
+    let mergedApps = 0;
+    for(const p of plans){
+      for(const removedIpo of p.remove){
+        // Re-point any applications from the removed IPO to the kept one,
+        // so nothing a user already recorded gets silently dropped.
+        const apps = State.applications.filter(a=>a.ipoId===removedIpo.id);
+        for(const app of apps){
+          app.ipoId = p.keep.id;
+          await idbPut('applications', app);
+          mergedApps++;
+        }
+        await idbDelete('ipos', removedIpo.id);
+        State.ipos = State.ipos.filter(i=>i.id!==removedIpo.id);
+      }
+    }
+    closeModal();
+    toast(`Merged ${dupeGroups.length} duplicate${dupeGroups.length>1?'s':''}${mergedApps>0?`, moved ${mergedApps} application(s)`:''}`);
+    render();
   });
 }
 async function autoDetectSmeIpos(){
@@ -2117,6 +2198,10 @@ function renderSettings(main){
       <p style="font-size:13px;color:var(--ink-dim);margin:0 0 12px;">IPOs added before the SME/Mainboard split have no type set, so they all default to Mainboard. This scans your existing IPOs and tags any with "SME" in the name as SME — it won't touch ones that already have a type set correctly.</p>
       <button class="btn ghost" id="s-fix-sme">${ICONS.ipo} Auto-detect SME IPOs</button>
     </div>
+    <div class="card" style="margin-top:10px;">
+      <p style="font-size:13px;color:var(--ink-dim);margin:0 0 12px;">Sync used to create a duplicate entry when the live feed's IPO name didn't exactly match one you already had (e.g. "Company (India) IPO" vs "Company IPO"). This has been fixed for future syncs — this button cleans up any duplicates already sitting in your data, keeping whichever entry has more complete info and moving any applications over to it.</p>
+      <button class="btn ghost" id="s-merge-dupes">${ICONS.ipo} Find & merge duplicate IPOs</button>
+    </div>
   `;
   const installBtn = document.getElementById('install-btn');
   if(installBtn) installBtn.addEventListener('click', async ()=>{
@@ -2135,6 +2220,7 @@ function renderSettings(main){
   document.getElementById('s-export').addEventListener('click', exportBackup);
   document.getElementById('s-import').addEventListener('click', triggerImport);
   document.getElementById('s-fix-sme').addEventListener('click', autoDetectSmeIpos);
+  document.getElementById('s-merge-dupes').addEventListener('click', mergeDuplicateIpos);
   const settingsSignIn = document.getElementById('settings-signin-btn');
   if(settingsSignIn) settingsSignIn.addEventListener('click', signInWithGoogle);
   const settingsSignOut = document.getElementById('settings-signout-btn');
