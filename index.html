@@ -19,14 +19,19 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
 <style>
 :root{
-  --bg:#12161c; --bg-alt:#0d1015;
-  --card:#1b2129; --card-hi:#212934;
-  --line:#2a323d;
-  --ink:#edeae3; --ink-dim:#a3aab5; --ink-faint:#6b7280;
+  /* Ledger-dark: deep ink-blue base, like a well-kept passbook under a desk
+     lamp. Brass/gold is reserved for money figures only. The accent is a
+     seal-red — the colour of a rubber stamp on an Indian financial
+     document — used for primary actions, not decoration. */
+  --bg:#10141b; --bg-alt:#0a0d12;
+  --card:#1a212b; --card-hi:#212a36;
+  --line:#2a3340;
+  --ink:#eceae4; --ink-dim:#9fa7b3; --ink-faint:#657080;
   --gold:#c9a24b; --gold-dim:#8a7038;
-  --green:#3f8f6f; --green-bg:#1a2b24;
-  --rust:#b5524a; --rust-bg:#2b1c1b;
-  --blue:#4b7fb5; --blue-bg:#1b2530;
+  --seal:#c1543c; --seal-dim:#8a3c29; --seal-bg:#2e1c17;
+  --green:#4a9574; --green-bg:#17271f;
+  --rust:#c1543c; --rust-bg:#2e1c17;
+  --blue:#5584b8; --blue-bg:#1a2531;
   --radius:10px;
   --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, Helvetica, Arial, sans-serif;
   box-sizing:border-box;
@@ -35,19 +40,21 @@
 }
 @media (prefers-color-scheme: light){
   :root:not([data-theme="dark"]){
-    --bg:#f5f3ee; --bg-alt:#ffffff;
-    --card:#ffffff; --card-hi:#faf8f3;
-    --line:#e2ddd0;
-    --ink:#1c1b18; --ink-dim:#5c574c; --ink-faint:#948d7c;
-    --gold:#a3792f; --gold-dim:#c9a24b;
-    --green:#2f7a5a; --green-bg:#e3efe9;
-    --rust:#a1443c; --rust-bg:#f5e5e3;
-    --blue:#3a6693; --blue-bg:#e5edf5;
+    /* Ledger-light: warm ivory paper, not clinical white. */
+    --bg:#f6f2e9; --bg-alt:#fffdf8;
+    --card:#fffdf8; --card-hi:#faf4e8;
+    --line:#e3d9c4;
+    --ink:#211c14; --ink-dim:#5f5847; --ink-faint:#938a73;
+    --gold:#9c7a2e; --gold-dim:#c9a24b;
+    --seal:#a8432e; --seal-dim:#c1543c; --seal-bg:#f6e4df;
+    --green:#2f7a56; --green-bg:#e4efe7;
+    --rust:#a8432e; --rust-bg:#f6e4df;
+    --blue:#3c6996; --blue-bg:#e5edf5;
   }
 }
 :root[data-theme="dark"]{
-  --bg:#12161c; --bg-alt:#0d1015; --card:#1b2129; --card-hi:#212934; --line:#2a323d;
-  --ink:#edeae3; --ink-dim:#a3aab5; --ink-faint:#6b7280;
+  --bg:#10141b; --bg-alt:#0a0d12; --card:#1a212b; --card-hi:#212a36; --line:#2a3340;
+  --ink:#eceae4; --ink-dim:#9fa7b3; --ink-faint:#657080;
 }
 html{ scroll-padding-top: env(safe-area-inset-top, 0px); height:100%; }
 *{ box-sizing:border-box; }
@@ -67,7 +74,7 @@ input, select{ font-family:inherit; }
   position:sticky; top:0; height:100vh; height:100dvh;
 }
 .brand{ display:flex; align-items:center; gap:10px; padding:8px 10px 22px; }
-.brand .mark{ width:26px; height:26px; border-radius:6px; background:linear-gradient(135deg,var(--gold),var(--gold-dim)); flex-shrink:0; }
+.brand .mark{ width:26px; height:26px; border-radius:6px; background:linear-gradient(135deg,var(--seal),var(--seal-dim)); flex-shrink:0; }
 .brand .name{ font-size:15px; font-weight:600; letter-spacing:.2px; }
 .brand .sub{ font-size:11px; color:var(--ink-faint); }
 nav.navlist{ display:flex; flex-direction:column; gap:2px; }
@@ -77,7 +84,7 @@ nav.navlist button{
 }
 nav.navlist button svg{ width:17px; height:17px; flex-shrink:0; opacity:.85; }
 nav.navlist button:hover{ background:var(--card); color:var(--ink); }
-nav.navlist button.active{ background:var(--card-hi); color:var(--ink); box-shadow:inset 2px 0 0 var(--gold); }
+nav.navlist button.active{ background:var(--card-hi); color:var(--ink); box-shadow:inset 2px 0 0 var(--seal); }
 .rail-foot{ margin-top:auto; display:flex; flex-direction:column; gap:6px; }
 .rail-foot button{ background:none; border:1px solid var(--line); color:var(--ink-dim); font-size:12px; padding:8px; border-radius:8px; cursor:pointer; }
 .rail-foot button:hover{ color:var(--ink); border-color:var(--ink-faint); }
@@ -101,7 +108,7 @@ main{ flex:1; min-width:0; padding:26px 30px 90px; max-width:900px; }
   }
   .tabbar button{ background:none;border:none;color:var(--ink-faint);display:flex;flex-direction:column;align-items:center;gap:2px;font-size:10px;padding:4px 6px;cursor:pointer; }
   .tabbar button svg{ width:19px;height:19px; }
-  .tabbar button.active{ color:var(--gold); }
+  .tabbar button.active{ color:var(--seal); }
 }
 
 /* ---------- primitives ---------- */
@@ -114,29 +121,52 @@ main{ flex:1; min-width:0; padding:26px 30px 90px; max-width:900px; }
 
 .stat{ background:var(--card); border:1px solid var(--line); border-radius:var(--radius); padding:14px 16px; }
 .stat .label{ font-size:11.5px; color:var(--ink-faint); margin-bottom:6px; }
-.stat .value{ font-size:22px; font-weight:650; }
+.stat .value{ font-size:20px; font-weight:650; }
 .stat .value.pos{ color:var(--green); }
 .stat .value.neg{ color:var(--rust); }
 .stat .value.gold{ color:var(--gold); }
 
-.btn{ display:inline-flex; align-items:center; justify-content:center; gap:8px; border:none; border-radius:8px; padding:10px 16px; font-size:13.5px; font-weight:600; cursor:pointer; background:var(--card-hi); color:var(--ink); border:1px solid var(--line); }
+.hero-stat{
+  background: linear-gradient(135deg, var(--card-hi), var(--card));
+  border:1px solid var(--line); border-radius:14px; padding:22px 24px;
+  position:relative; overflow:hidden;
+}
+.hero-stat::before{
+  content:''; position:absolute; top:-40%; right:-10%; width:220px; height:220px;
+  border-radius:50%; opacity:.08; pointer-events:none;
+  background: radial-gradient(circle, currentColor, transparent 70%);
+}
+.hero-stat.pos{ color:var(--green); }
+.hero-stat.neg{ color:var(--rust); }
+.hero-stat .label{ font-size:12px; color:var(--ink-faint); margin-bottom:8px; font-weight:600; }
+.hero-stat .value{ font-size:34px; font-weight:700; letter-spacing:-.3px; color:inherit; }
+@media (max-width:480px){ .hero-stat .value{ font-size:28px; } }
+
+.attn-row{ padding:9px 2px; cursor:pointer; justify-content:flex-start !important; align-items:flex-start !important; }
+.attn-dot{ width:8px; height:8px; border-radius:50%; flex-shrink:0; margin-top:5px; }
+.attn-text{ font-size:13.5px; line-height:1.4; }
+
+.btn{ display:inline-flex; align-items:center; justify-content:center; gap:8px; border:none; border-radius:8px; padding:10px 16px; font-size:13.5px; font-weight:600; cursor:pointer; background:var(--card-hi); color:var(--ink); border:1px solid var(--line); line-height:1.2; }
+.btn svg{ width:15px; height:15px; flex-shrink:0; }
 .btn:hover{ border-color:var(--ink-faint); }
-.btn.primary{ background:var(--gold); color:#1b1404; border-color:var(--gold); }
+.btn.primary{ background:var(--seal); color:#fdf2ee; border-color:var(--seal); }
 .btn.primary:hover{ filter:brightness(1.08); }
 .btn.primary:disabled{ background:var(--line); color:var(--ink-faint); cursor:not-allowed; border-color:var(--line); }
 .btn.danger{ color:var(--rust); border-color:var(--rust); background:none; }
 .btn.ghost{ background:none; border-color:var(--line); }
 .btn.block{ width:100%; padding:14px; font-size:14.5px; }
+.btn.block svg{ width:17px; height:17px; }
 .btn.sm{ padding:6px 10px; font-size:12px; }
+.btn.sm svg{ width:13px; height:13px; }
 
 input[type=text], input[type=number], input[type=date], select, textarea{
   background:var(--bg-alt); border:1px solid var(--line); color:var(--ink); border-radius:8px; padding:9px 11px; font-size:13.5px; width:100%;
 }
-input:focus, select:focus, textarea:focus, button:focus-visible{ outline:2px solid var(--gold); outline-offset:1px; }
+input:focus, select:focus, textarea:focus, button:focus-visible{ outline:2px solid var(--seal); outline-offset:1px; }
 label.field{ display:flex; flex-direction:column; gap:5px; font-size:12px; color:var(--ink-dim); }
 
 .chip{ display:inline-flex; align-items:center; gap:6px; padding:8px 14px; border-radius:20px; border:1px solid var(--line); background:var(--bg-alt); color:var(--ink-dim); font-size:13px; cursor:pointer; }
-.chip.selected{ background:var(--gold); border-color:var(--gold); color:#1b1404; font-weight:600; }
+.chip.selected{ background:var(--seal); border-color:var(--seal); color:#fdf2ee; font-weight:600; }
 
 .badge{ display:inline-flex; align-items:center; gap:4px; padding:3px 9px; border-radius:20px; font-size:11px; font-weight:600; }
 .badge.open{ background:var(--green-bg); color:var(--green); }
@@ -155,7 +185,7 @@ label.field{ display:flex; flex-direction:column; gap:5px; font-size:12px; color
 .check{ display:flex; align-items:center; gap:12px; padding:12px 4px; border-bottom:1px solid var(--line); cursor:pointer; }
 .check:last-child{ border-bottom:none; }
 .check .box{ width:20px;height:20px;border-radius:6px;border:1.5px solid var(--ink-faint); flex-shrink:0; display:flex;align-items:center;justify-content:center; }
-.check.on .box{ background:var(--gold); border-color:var(--gold); }
+.check.on .box{ background:var(--seal); border-color:var(--seal); }
 .check.disabled{ opacity:.5; cursor:not-allowed; }
 .check .name{ flex:1; font-size:14px; }
 .check .tag{ font-size:11px; color:var(--ink-faint); }
@@ -181,7 +211,7 @@ label.field{ display:flex; flex-direction:column; gap:5px; font-size:12px; color
 .modal-actions{ display:flex; gap:10px; margin-top:18px; }
 .modal-actions .btn{ flex:1; }
 
-.toast{ position:fixed; bottom:24px; left:50%; transform:translateX(-50%); background:var(--card-hi); border:1px solid var(--gold); color:var(--ink); padding:12px 20px; border-radius:10px; font-size:13.5px; z-index:200; box-shadow:0 8px 24px rgba(0,0,0,.4); }
+.toast{ position:fixed; bottom:24px; left:50%; transform:translateX(-50%); background:var(--card-hi); border:1px solid var(--seal); color:var(--ink); padding:12px 20px; border-radius:10px; font-size:13.5px; z-index:200; box-shadow:0 8px 24px rgba(0,0,0,.4); }
 @media (max-width:760px){ .toast{ bottom:76px; } }
 
 .list-item{ display:flex; align-items:center; justify-content:space-between; padding:13px 4px; border-bottom:1px solid var(--line); gap:10px; }
@@ -194,7 +224,7 @@ label.field{ display:flex; flex-direction:column; gap:5px; font-size:12px; color
 .iconbtn:hover{ color:var(--ink); background:var(--card); }
 .iconbtn svg{ width:16px;height:16px; }
 
-a.link{ color:var(--gold); text-decoration:none; }
+a.link{ color:var(--seal); text-decoration:none; }
 a.link:hover{ text-decoration:underline; }
 
 .money{ font-weight:600; }
@@ -209,9 +239,16 @@ a.link:hover{ text-decoration:underline; }
 .ipo-hero .facts .f span{ color:var(--ink-faint); }
 
 .bankcard{ border:1px solid var(--line); border-radius:10px; padding:14px; cursor:pointer; background:var(--bg-alt); }
-.bankcard.selected{ border-color:var(--gold); background:var(--card-hi); }
+.bankcard.selected{ border-color:var(--seal); background:var(--card-hi); }
 .bankcard .bn{ font-weight:600; font-size:14px; }
 .bankcard .bb{ font-size:12px; color:var(--ink-faint); margin-top:4px; }
+
+.settings-actions{ display:flex; gap:10px; flex-wrap:wrap; }
+.settings-actions .btn{ flex:1 1 auto; white-space:nowrap; }
+@media (max-width:520px){
+  .settings-actions{ flex-direction:column; }
+  .settings-actions .btn{ width:100%; }
+}
 
 .pill-tabs{ display:flex; gap:6px; margin-bottom:16px; overflow-x:auto; }
 .pill-tabs button{ background:none; border:1px solid var(--line); color:var(--ink-dim); padding:7px 14px; border-radius:20px; font-size:12.5px; cursor:pointer; white-space:nowrap; }
@@ -830,16 +867,16 @@ function renderDashboard(main){
     const st = ipoStatus(ipo);
     const openD = daysDiff(ipo.openDate), closeD = daysDiff(ipo.closeDate), allotD = daysDiff(ipo.allotmentDate), listD = daysDiff(ipo.listingDate);
     const gmpTag = ipo.gmpPercent!=null ? ` · GMP ${Number(ipo.gmpPercent)>0?'+':''}${ipo.gmpPercent}%` : '';
-    if(closeD===0) attn.push({dot:'🔴', text:`${ipo.name} — Closing today${gmpTag}`, ipo});
-    else if(closeD===1) attn.push({dot:'🟡', text:`${ipo.name} — Closing tomorrow${gmpTag}`, ipo});
-    if(allotD===0) attn.push({dot:'🟡', text:`${ipo.name} — Check allotment if available`, ipo});
-    else if(allotD===1) attn.push({dot:'🟡', text:`${ipo.name} — Allotment tomorrow`, ipo});
-    if(listD===0) attn.push({dot:'🔵', text:`${ipo.name} — Listing today`, ipo});
-    else if(listD===1) attn.push({dot:'🔵', text:`${ipo.name} — Listing tomorrow`, ipo});
-    if(openD===0) attn.push({dot:'🟢', text:`${ipo.name} — Opens today${gmpTag}`, ipo});
-    else if(openD===1) attn.push({dot:'🟢', text:`${ipo.name} — Opens tomorrow${gmpTag}`, ipo});
+    if(closeD===0) attn.push({dot:'rust', text:`${ipo.name} — Closing today${gmpTag}`, ipo});
+    else if(closeD===1) attn.push({dot:'gold', text:`${ipo.name} — Closing tomorrow${gmpTag}`, ipo});
+    if(allotD===0) attn.push({dot:'gold', text:`${ipo.name} — Check allotment if available`, ipo});
+    else if(allotD===1) attn.push({dot:'gold', text:`${ipo.name} — Allotment tomorrow`, ipo});
+    if(listD===0) attn.push({dot:'blue', text:`${ipo.name} — Listing today`, ipo});
+    else if(listD===1) attn.push({dot:'blue', text:`${ipo.name} — Listing tomorrow`, ipo});
+    if(openD===0) attn.push({dot:'green', text:`${ipo.name} — Opens today${gmpTag}`, ipo});
+    else if(openD===1) attn.push({dot:'green', text:`${ipo.name} — Opens tomorrow${gmpTag}`, ipo});
     const pending = ipoTotalPending(ipo.id);
-    if(pending>0 && st.key==='listed') attn.push({dot:'🟡', text:`${ipo.name} — Refund pending (${fmtMoney(pending)})`, ipo});
+    if(pending>0 && st.key==='listed') attn.push({dot:'gold', text:`${ipo.name} — Refund pending (${fmtMoney(pending)})`, ipo});
   });
 
   const todayItems = attn.filter(a=>a.text.includes('today'));
@@ -850,18 +887,21 @@ function renderDashboard(main){
     <h1 class="page-title">Dashboard</h1>
     <p class="page-sub">Your IPO money at a glance</p>
 
-    <div class="grid cols-4">
-      <div class="stat"><div class="label">Total IPO profit</div><div class="value ${profit>=0?'pos':'neg'} tabular">${fmtMoney(profit)}</div></div>
-      <div class="stat" id="banks-overview-card" style="cursor:pointer;"><div class="label">Total money in banks</div><div class="value gold tabular">${fmtMoney(totalMoney)}</div></div>
-      <div class="stat"><div class="label">Currently blocked</div><div class="value tabular">${fmtMoney(blocked)}</div></div>
-      <div class="stat"><div class="label">Refund pending</div><div class="value tabular">${fmtMoney(refundPending)}</div></div>
+    <div class="hero-stat ${profit>=0?'pos':'neg'}">
+      <div class="label">Total IPO profit</div>
+      <div class="value tabular">${fmtMoney(profit)}</div>
     </div>
-    <div class="grid cols-2" style="margin-top:12px;">
+    <div class="grid cols-4" style="margin-top:12px;">
+      <div class="stat" id="banks-overview-card" style="cursor:pointer;"><div class="label">In banks</div><div class="value gold tabular">${fmtMoney(totalMoney)}</div></div>
+      <div class="stat"><div class="label">Blocked</div><div class="value tabular">${fmtMoney(blocked)}</div></div>
+      <div class="stat"><div class="label">Refund pending</div><div class="value tabular">${fmtMoney(refundPending)}</div></div>
       <div class="stat"><div class="label">Active applications</div><div class="value tabular">${activeApps}</div></div>
-      <div class="stat"><div class="label">Upcoming IPOs</div><div class="value tabular">${upcoming}</div></div>
     </div>
 
-    <div class="section-label">Needs attention</div>
+    <div class="row" style="margin-top:22px;margin-bottom:10px;">
+      <div class="section-label" style="margin:0;">Needs attention</div>
+      ${upcoming>0 ? `<div style="font-size:11.5px;color:var(--ink-faint);">${upcoming} upcoming</div>` : ''}
+    </div>
     ${attn.length===0 ? `<div class="empty-state"><div class="t">Nothing urgent</div><div class="s">Add IPOs to start tracking dates.</div></div>` : `
       <div class="card">
         ${todayItems.length? `<div style="font-size:11px;color:var(--ink-faint);margin-bottom:6px;">TODAY</div>` : ''}
@@ -930,8 +970,10 @@ function openBanksOverviewModal(){
   if(viewAll) viewAll.addEventListener('click', (e)=>{ e.preventDefault(); closeModal(); go('transfers'); });
 }
 function attnRow(a){
-  return `<div class="row" style="padding:8px 0;cursor:pointer;" data-goto-ipo="${a.ipo.id}">
-    <span style="font-size:13.5px;">${a.dot} ${esc(a.text)}</span>
+  const dotColor = {rust:'var(--rust)', gold:'var(--gold)', blue:'var(--blue)', green:'var(--green)'}[a.dot] || 'var(--ink-faint)';
+  return `<div class="row attn-row" data-goto-ipo="${a.ipo.id}">
+    <span class="attn-dot" style="background:${dotColor};"></span>
+    <span class="attn-text">${esc(a.text)}</span>
   </div>`;
 }
 function renderIpoStrip(list){
@@ -2195,8 +2237,8 @@ function renderSettings(main){
     <div class="section-label">Data</div>
     <div class="card">
       <p style="font-size:13px;color:var(--ink-dim);margin:0 0 12px;">All data is stored locally on this device (IndexedDB) and works offline. Export a backup regularly.</p>
-      <div style="display:flex;gap:10px;flex-wrap:wrap;">
-        <button class="btn primary" id="s-export">${ICONS.download} Export backup (JSON)</button>
+      <div class="settings-actions">
+        <button class="btn primary" id="s-export">${ICONS.download} Export backup</button>
         <button class="btn ghost" id="s-import">${ICONS.upload} Import backup</button>
         <button class="btn danger" id="s-wipe">${ICONS.trash} Erase all data</button>
       </div>
