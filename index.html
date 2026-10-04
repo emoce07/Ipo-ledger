@@ -278,22 +278,15 @@ const ICONS = {
     document.getElementById('pwa-manifest-link').setAttribute('href', manifestUrl);
   }catch(e){ console.warn('PWA manifest setup failed', e); }
 
-  // Minimal offline-friendly service worker, registered from an in-memory blob.
-  // Some browsers restrict blob: service workers; failures here are non-fatal —
-  // the app still works fully, it just may not qualify for the full "Install" banner everywhere.
+  // Real, file-based service worker (sw.js, hosted alongside this page) —
+  // required (not just preferred) for Periodic Background Sync, which
+  // cannot attach to a blob: service worker. Registered with scope '.' so
+  // it can control the whole app. Failure here is non-fatal: the app still
+  // works fully without it, just without background notification checks.
   if('serviceWorker' in navigator){
-    try{
-      const swCode = `
-        self.addEventListener('install', e => self.skipWaiting());
-        self.addEventListener('activate', e => self.clients.claim());
-        self.addEventListener('fetch', e => {
-          e.respondWith(fetch(e.request).catch(()=> caches.match(e.request)));
-        });
-      `;
-      const swBlob = new Blob([swCode], {type:'text/javascript'});
-      const swUrl = URL.createObjectURL(swBlob);
-      navigator.serviceWorker.register(swUrl).catch(()=>{ /* silently ignore unsupported blob SW */ });
-    }catch(e){ /* ignore */ }
+    navigator.serviceWorker.register('./sw.js', { scope: './' })
+      .then(reg => { window._swRegistration = reg; })
+      .catch(()=>{ /* older browsers / unsupported — app still works */ });
   }
 })();
 
@@ -836,14 +829,15 @@ function renderDashboard(main){
   State.ipos.forEach(ipo=>{
     const st = ipoStatus(ipo);
     const openD = daysDiff(ipo.openDate), closeD = daysDiff(ipo.closeDate), allotD = daysDiff(ipo.allotmentDate), listD = daysDiff(ipo.listingDate);
-    if(closeD===0) attn.push({dot:'🔴', text:`${ipo.name} — Closing today`, ipo});
-    else if(closeD===1) attn.push({dot:'🟡', text:`${ipo.name} — Closing tomorrow`, ipo});
-    if(allotD===0) attn.push({dot:'🟡', text:`${ipo.name} — Allotment today`, ipo});
+    const gmpTag = ipo.gmpPercent!=null ? ` · GMP ${Number(ipo.gmpPercent)>0?'+':''}${ipo.gmpPercent}%` : '';
+    if(closeD===0) attn.push({dot:'🔴', text:`${ipo.name} — Closing today${gmpTag}`, ipo});
+    else if(closeD===1) attn.push({dot:'🟡', text:`${ipo.name} — Closing tomorrow${gmpTag}`, ipo});
+    if(allotD===0) attn.push({dot:'🟡', text:`${ipo.name} — Check allotment if available`, ipo});
     else if(allotD===1) attn.push({dot:'🟡', text:`${ipo.name} — Allotment tomorrow`, ipo});
     if(listD===0) attn.push({dot:'🔵', text:`${ipo.name} — Listing today`, ipo});
     else if(listD===1) attn.push({dot:'🔵', text:`${ipo.name} — Listing tomorrow`, ipo});
-    if(openD===0) attn.push({dot:'🟢', text:`${ipo.name} — Opens today`, ipo});
-    else if(openD===1) attn.push({dot:'🟢', text:`${ipo.name} — Opens tomorrow`, ipo});
+    if(openD===0) attn.push({dot:'🟢', text:`${ipo.name} — Opens today${gmpTag}`, ipo});
+    else if(openD===1) attn.push({dot:'🟢', text:`${ipo.name} — Opens tomorrow${gmpTag}`, ipo});
     const pending = ipoTotalPending(ipo.id);
     if(pending>0 && st.key==='listed') attn.push({dot:'🟡', text:`${ipo.name} — Refund pending (${fmtMoney(pending)})`, ipo});
   });
@@ -2167,6 +2161,20 @@ function renderSettings(main){
       `}
     </div>
 
+    <div class="section-label">Notifications</div>
+    <div class="card">
+      ${(!('Notification' in window)) ? `
+        <p style="font-size:13px;color:var(--ink-dim);margin:0;">Notifications aren't supported in this browser.</p>
+      ` : Notification.permission==='granted' ? `
+        <p style="font-size:13px;color:var(--green);margin:0;">✅ Enabled — you'll get an alert for IPOs closing today and allotment-day reminders whenever you open the app. On Android, installed as an app, Chrome may also check in the background every so often — timing isn't guaranteed, but it doesn't strictly require opening the app that day.</p>
+      ` : Notification.permission==='denied' ? `
+        <p style="font-size:13px;color:var(--rust);margin:0 0 6px;">Blocked. Enable notifications for this site in your browser's site settings to turn this on.</p>
+      ` : `
+        <p style="font-size:13px;color:var(--ink-dim);margin:0 0 12px;">Get an alert for IPOs closing today (with GMP) and a reminder to check allotment on allotment day. On Android (installed as an app), Chrome can also run this check in the background on its own schedule, not just when you open the app — timing isn't exact, and this needs the app to be installed to your home screen first. On iPhone, Apple doesn't allow background checks for web apps at all, so this only fires on open there.</p>
+        <button class="btn primary" id="enable-notif-btn">Enable notifications</button>
+      `}
+    </div>
+
     <div class="section-label">Appearance</div>
     <div class="card">
       <div class="row">
@@ -2225,6 +2233,8 @@ function renderSettings(main){
   if(settingsSignIn) settingsSignIn.addEventListener('click', signInWithGoogle);
   const settingsSignOut = document.getElementById('settings-signout-btn');
   if(settingsSignOut) settingsSignOut.addEventListener('click', signOutOfCloud);
+  const enableNotifBtn = document.getElementById('enable-notif-btn');
+  if(enableNotifBtn) enableNotifBtn.addEventListener('click', enableNotifications);
   document.getElementById('s-wipe').addEventListener('click', ()=>{
     openModal(`
       <div class="modal">
@@ -2242,6 +2252,89 @@ function renderSettings(main){
       closeModal(); toast('All data erased'); go('dashboard');
     });
   });
+}
+
+/* ---------- LOCAL NOTIFICATIONS (free, no backend) ----------
+   Real push notifications that fire even with the app fully closed require
+   a paid backend (Firebase Cloud Functions needs the Blaze plan). This is
+   the honest free alternative: a browser Notification fires the moment the
+   app is opened (or brought back to the foreground) on any day something is
+   due — closing-today IPOs with their GMP, and "check allotment" on
+   allotment day. It won't wake your phone at a fixed time on its own; it
+   fires as soon as you next open the app that day, once per item per day. */
+function todaysNotifiableItems(){
+  const items = [];
+  State.ipos.forEach(ipo=>{
+    const closeD = daysDiff(ipo.closeDate);
+    const allotD = daysDiff(ipo.allotmentDate);
+    if(closeD===0){
+      const gmpTag = ipo.gmpPercent!=null ? ` (GMP ${Number(ipo.gmpPercent)>0?'+':''}${ipo.gmpPercent}%)` : '';
+      items.push({ key:`close:${ipo.id}:${todayStr()}`, title:`${ipo.name} closes today${gmpTag}`, body:'Last day to apply.' });
+    }
+    if(allotD===0){
+      items.push({ key:`allot:${ipo.id}:${todayStr()}`, title:`${ipo.name} — allotment day`, body:'Check allotment if available.' });
+    }
+  });
+  return items;
+}
+function checkAndFireLocalNotifications(){
+  if(!('Notification' in window) || Notification.permission!=='granted') return;
+  const firedKey = 'ipo-notified-keys';
+  let fired;
+  try{ fired = new Set(JSON.parse(localStorage.getItem(firedKey)||'[]')); }
+  catch(e){ fired = new Set(); }
+  const items = todaysNotifiableItems();
+  let firedAny = false;
+  for(const item of items){
+    if(fired.has(item.key)) continue;
+    try{ new Notification(item.title, { body:item.body, icon: undefined, tag:item.key }); }
+    catch(e){ console.error('Notification failed', e); }
+    fired.add(item.key);
+    firedAny = true;
+  }
+  if(firedAny){
+    // Trim to roughly the last week's worth of keys so this never grows unbounded.
+    const trimmed = Array.from(fired).slice(-200);
+    localStorage.setItem(firedKey, JSON.stringify(trimmed));
+  }
+}
+async function registerPeriodicSync(){
+  // Best-effort — only works on Android Chrome, installed as a home-screen
+  // app, and only after the browser judges the site "engaged with" enough.
+  // Any failure here is silent and non-fatal; the in-app check on open still
+  // covers every platform as the baseline.
+  try{
+    const reg = window._swRegistration || await navigator.serviceWorker.ready;
+    if(!reg || !('periodicSync' in reg)) return false;
+    const status = await navigator.permissions.query({ name: 'periodic-background-sync' });
+    if(status.state !== 'granted') return false;
+    await reg.periodicSync.register('ipo-daily-check', { minInterval: 12 * 60 * 60 * 1000 }); // 12h — a floor, not a guarantee
+    return true;
+  }catch(e){ return false; }
+}
+async function enableNotifications(){
+  if(!('Notification' in window)){ toast('Notifications are not supported in this browser'); return; }
+  if(Notification.permission==='granted'){
+    toast('Notifications are already enabled');
+    checkAndFireLocalNotifications();
+    await registerPeriodicSync();
+    return;
+  }
+  if(Notification.permission==='denied'){ toast('Notifications are blocked — enable them in your browser/app settings for this site'); return; }
+  const result = await Notification.requestPermission();
+  if(result==='granted'){
+    toast('Notifications enabled');
+    checkAndFireLocalNotifications();
+    const bgOk = await registerPeriodicSync();
+    if(!bgOk){
+      // Not fatal — just means this device/browser can't do true background
+      // checks; the open-the-app check still works everywhere.
+      console.log('Periodic background sync unavailable on this device/browser — in-app check still active.');
+    }
+  } else {
+    toast('Notifications not enabled');
+  }
+  render(); // refresh Settings so the button reflects the new state
 }
 
 /* ---------- THEME ---------- */
@@ -2283,7 +2376,11 @@ window.addEventListener('appinstalled', ()=>{ deferredInstallPrompt = null; toas
   const initialRoute = (location.hash||'').replace('#','');
   State.route = VALID_ROUTES.includes(initialRoute) ? initialRoute : 'dashboard';
   go(State.route, {replace:true});
+  checkAndFireLocalNotifications();
 })();
+document.addEventListener('visibilitychange', ()=>{
+  if(document.visibilityState==='visible') checkAndFireLocalNotifications();
+});
 </script>
 </body>
 </html>
