@@ -2118,17 +2118,51 @@ function renderHistory(main){
 // no registrar publishes a URL parameter to prefill PAN or skip this, so these
 // are just the correct homepage to land on; PAN is copied to the clipboard
 // separately so at least that part doesn't need retyping.
+// Deliberately no "default" key — the live data feed does not provide
+// registrar info (confirmed against the API's own documented field list),
+// so guessing a default silently sends people to the wrong registrar's
+// site. Unknown registrar always routes through openRegistrarUnknownModal
+// instead, which asks rather than assumes.
 const REGISTRAR_FALLBACK_URLS = {
   'KFin Technologies': 'https://ipostatus.kfintech.com',
   'KFintech': 'https://ipostatus.kfintech.com',
   'Link Intime': 'https://linkintime.co.in/initial_offer/public-issues.html',
   'MUFG Intime': 'https://linkintime.co.in/initial_offer/public-issues.html',
-  'Bigshare Services': 'https://ipo.bigshareonline.com/IPO_Status.html',
-  'Bigshare': 'https://ipo.bigshareonline.com/IPO_Status.html',
+  'Bigshare Services': 'https://ipo.bigshareonline.com/ipo_status.html',
+  'Bigshare': 'https://ipo.bigshareonline.com/ipo_status.html',
   'Cameo Corporate Services': 'https://in.cameoindia.com/',
   'Skyline Financial Services': 'https://www.skylinerta.com/ipo.php',
-  default: 'https://ipostatus.kfintech.com',
 };
+function openRegistrarUnknownModal(ipo, pan){
+  const names = Object.keys(REGISTRAR_FALLBACK_URLS).filter(k=>
+    !['KFintech','MUFG Intime','Bigshare'].includes(k) // skip the duplicate/alias entries in the picker list
+  );
+  openModal(`
+    <div class="modal">
+      <h3>Which registrar handles ${esc(ipo.name)}?</h3>
+      <p style="font-size:13px;color:var(--ink-dim);margin:0 0 14px;">The live data feed doesn't include registrar info, so this isn't set yet. Pick the correct one — it'll be remembered for this IPO from now on. You can check the IPO's RHP/prospectus or your broker app if you're not sure.</p>
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        ${names.map(name=>`<button class="btn ghost" data-pick-registrar="${esc(name)}" style="justify-content:flex-start;">${esc(name)}</button>`).join('')}
+      </div>
+      <div class="modal-actions"><button class="btn ghost" data-close="1" style="flex:1;">Cancel</button></div>
+    </div>
+  `);
+  document.querySelectorAll('[data-pick-registrar]').forEach(btn=>btn.addEventListener('click', async ()=>{
+    const name = btn.dataset.pickRegistrar;
+    const url = REGISTRAR_FALLBACK_URLS[name];
+    ipo.registrar = name;
+    await idbPut('ipos', ipo);
+    closeModal();
+    if(pan){
+      try{ await navigator.clipboard.writeText(pan); toast(`Saved — PAN copied, opening ${name}`); }
+      catch(e){ toast(`Saved — opening ${name}`); }
+    } else {
+      toast(`Saved — opening ${name}`);
+    }
+    window.open(url, '_blank', 'noopener');
+    render();
+  }));
+}
 function openGmpHistoryModal(ipo){
   const history = (ipo.gmpHistory || []).slice().sort((a,b)=> (b.date||'').localeCompare(a.date||''));
   openModal(`
@@ -2193,14 +2227,22 @@ function openAllotmentModal(ipoId){
     const app = State.applications.find(x=>x.id===appId);
     const applicant = applicantById(app.applicantId);
     const pan = applicant?.pan;
-    const url = ipo.registrarUrl || REGISTRAR_FALLBACK_URLS[ipo.registrar] || REGISTRAR_FALLBACK_URLS.default;
+    const knownUrl = ipo.registrarUrl || REGISTRAR_FALLBACK_URLS[ipo.registrar];
+    if(!knownUrl){
+      // Registrar genuinely unknown for this IPO — the live data feed does
+      // not provide registrar info at all, so guessing one (e.g. always
+      // defaulting to KFin) risks sending the user to the WRONG registrar's
+      // site, which previously happened silently. Ask instead of guessing.
+      openRegistrarUnknownModal(ipo, pan);
+      return;
+    }
     if(pan){
       try{ await navigator.clipboard.writeText(pan); toast(`PAN copied — paste it on the registrar page`); }
       catch(e){ toast(`Opening registrar site — PAN: ${pan}`); }
     } else {
       toast('No PAN saved for this applicant — add one in Applicants for faster checks');
     }
-    window.open(url, '_blank', 'noopener');
+    window.open(knownUrl, '_blank', 'noopener');
   }));
   document.querySelectorAll('[data-set-status]').forEach(btn=>btn.addEventListener('click', async ()=>{
     const appId = btn.dataset.setStatus; const status = btn.dataset.status;
