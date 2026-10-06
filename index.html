@@ -271,6 +271,12 @@ a.link:hover{ text-decoration:underline; }
 .bankcard .bn{ font-weight:650; font-size:14px; }
 .bankcard .bb{ font-size:12px; color:var(--ink-faint); margin-top:4px; }
 
+.gmp-table{ width:100%; border-collapse:collapse; font-size:13px; }
+.gmp-table th{ text-align:left; font-size:10.5px; text-transform:uppercase; letter-spacing:.4px; color:var(--ink-faint); font-weight:700; padding:8px 10px; border-bottom:1px solid var(--line); white-space:nowrap; }
+.gmp-table td{ padding:10px; border-bottom:1px solid var(--line); white-space:nowrap; }
+.gmp-table tr:last-child td{ border-bottom:none; }
+.gmp-table th:first-child, .gmp-table td:first-child{ padding-left:4px; }
+
 .settings-actions{ display:flex; gap:10px; flex-wrap:wrap; }
 .settings-actions .btn{ flex:1 1 auto; white-space:nowrap; }
 @media (max-width:520px){
@@ -1562,7 +1568,7 @@ function isoToDate(s){
   return d.toISOString().slice(0,10);
 }
 
-async function syncLiveIpos(){
+async function syncLiveIpos(silent){
   const btn = document.getElementById('sync-ipos-btn');
   if(btn){ btn.disabled = true; btn.textContent = 'Syncing…'; }
   try{
@@ -1611,11 +1617,15 @@ async function syncLiveIpos(){
     }
     localStorage.setItem('ipo-feed-last-sync', new Date().toISOString());
     localStorage.setItem('ipo-feed-updated-at', data.updatedAt||'');
-    toast(`Synced: ${added} added, ${updated} updated`);
+    // A silent (automatic, background) sync only shows a toast if it
+    // actually changed something — otherwise it'd produce a "Synced: 0
+    // added, 0 updated" toast every single morning even when nothing is
+    // new, which would be noise rather than useful.
+    if(!silent || added>0 || updated>0) toast(`Synced: ${added} added, ${updated} updated`);
     render();
   }catch(err){
     console.error(err);
-    toast('Sync failed — check the feed URL or your connection');
+    if(!silent) toast('Sync failed — check the feed URL or your connection');
     if(btn){ btn.disabled=false; btn.textContent = 'Sync live IPOs'; }
   }
 }
@@ -1652,7 +1662,7 @@ function renderIpos(main){
     <div id="ipo-list"></div>
   `;
   document.getElementById('add-ipo').addEventListener('click',()=>openIpoModal(null));
-  document.getElementById('sync-ipos-btn').addEventListener('click', syncLiveIpos);
+  document.getElementById('sync-ipos-btn').addEventListener('click', ()=>syncLiveIpos(false));
   main.querySelectorAll('[data-tab]').forEach(b=>b.addEventListener('click',()=>{ main._ipoTab=b.dataset.tab; renderIpos(main); }));
   main.querySelectorAll('[data-type-tab]').forEach(b=>b.addEventListener('click',()=>{ main._ipoTypeTab=b.dataset.typeTab; renderIpos(main); }));
   let list = State.ipos.filter(i=> (i.ipoType||'mainboard')===typeTab );
@@ -2165,28 +2175,40 @@ function openRegistrarUnknownModal(ipo, pan){
 }
 function openGmpHistoryModal(ipo){
   const history = (ipo.gmpHistory || []).slice().sort((a,b)=> (b.date||'').localeCompare(a.date||''));
+  const maxPrice = Number(ipo.maxPrice)||0;
   openModal(`
-    <div class="modal" style="max-width:420px;">
+    <div class="modal" style="max-width:460px;">
       <h3>${esc(ipo.name)} — GMP history</h3>
       ${history.length===0 ? `<div class="empty-state"><div class="t">No history yet</div><div class="s">This builds up day by day as the live feed syncs.</div></div>` : `
-      <div style="display:flex;flex-direction:column;">
-        <div class="row" style="padding:8px 4px;font-size:11px;color:var(--ink-faint);font-weight:700;text-transform:uppercase;letter-spacing:.4px;border-bottom:1px solid var(--line);">
-          <span>Date</span><span style="margin-left:auto;">GMP</span>
-        </div>
+      <div style="overflow-x:auto;margin:0 -4px;">
+      <table class="gmp-table">
+        <thead>
+          <tr><th>Date</th><th>GMP</th><th>Est. listing price</th></tr>
+        </thead>
+        <tbody>
         ${history.map((h, i)=>{
           const prev = history[i+1]; // next in array = previous day, since sorted newest-first
           const pct = h.gmpPercent;
-          const delta = (prev && prev.gmpPercent!=null && pct!=null) ? (Number(pct) - Number(prev.gmpPercent)) : null;
+          const gmpAmt = h.gmpPrice!=null ? Number(h.gmpPrice) : null;
+          const trendPct = (prev && prev.gmpPercent!=null && pct!=null) ? (Number(pct) - Number(prev.gmpPercent)) : null;
+          const trendArrow = trendPct==null ? '' : trendPct>0 ? '▲' : trendPct<0 ? '▼' : '–';
+          const trendColor = trendPct==null ? 'var(--ink-faint)' : trendPct>0 ? 'var(--green)' : trendPct<0 ? 'var(--rust)' : 'var(--ink-faint)';
           const pctColor = pct==null ? 'var(--ink-faint)' : Number(pct)>0 ? 'var(--green)' : Number(pct)<0 ? 'var(--rust)' : 'var(--ink)';
-          return `<div class="row" style="padding:10px 4px;border-bottom:1px solid var(--line);">
-            <span style="font-size:13.5px;">${fmtDate(h.date)}</span>
-            <span style="margin-left:auto;text-align:right;">
-              <span class="tabular" style="font-weight:650;color:${pctColor};">${h.gmpPrice!=null?'₹'+h.gmpPrice+' ':''}${pct!=null?(Number(pct)>0?'+':'')+pct+'%':'—'}</span>
-              ${delta!=null ? `<div style="font-size:10.5px;color:var(--ink-faint);margin-top:1px;">${delta>0?'▲':delta<0?'▼':'–'} ${Math.abs(delta).toFixed(1)}pt vs prev.</div>` : ''}
-            </span>
-          </div>`;
+          const estListing = (maxPrice>0 && gmpAmt!=null) ? maxPrice+gmpAmt : null;
+          return `<tr>
+            <td>${fmtDate(h.date)}</td>
+            <td class="tabular" style="color:${pctColor};font-weight:650;">
+              ${gmpAmt!=null?'₹'+gmpAmt+' ':''}${pct!=null?'('+(Number(pct)>0?'+':'')+pct+'%)':'—'}
+              <span style="color:${trendColor};font-size:11px;margin-left:3px;">${trendArrow}</span>
+            </td>
+            <td class="tabular">${estListing!=null?fmtMoney(estListing):'—'}</td>
+          </tr>`;
         }).join('')}
-      </div>`}
+        </tbody>
+      </table>
+      </div>
+      <p style="font-size:11px;color:var(--ink-faint);margin:10px 2px 0;">Est. listing price = upper price band + GMP. Not a guarantee — actual listing can differ.</p>
+      `}
       <div class="modal-actions"><button class="btn ghost" data-close="1" style="flex:1;">Close</button></div>
     </div>
   `);
@@ -2525,7 +2547,25 @@ window.addEventListener('appinstalled', ()=>{ deferredInstallPrompt = null; toas
   State.route = VALID_ROUTES.includes(initialRoute) ? initialRoute : 'dashboard';
   go(State.route, {replace:true});
   checkAndFireLocalNotifications();
+  autoSyncIfNeeded();
 })();
+// Auto-syncs the live IPO feed once per calendar day, the first time the app
+// is opened that day — no manual "Sync live IPOs" tap needed. Runs quietly
+// in the background; the same toast syncLiveIpos() already shows is the
+// only visible sign it happened. If it fails (offline, feed down), it just
+// tries again next time the app opens — no error shown, since a background
+// sync failing silently is better than interrupting whatever the user
+// actually opened the app to do.
+function autoSyncIfNeeded(){
+  try{
+    const lastSync = localStorage.getItem('ipo-feed-last-sync');
+    const lastSyncDate = lastSync ? new Date(lastSync).toDateString() : null;
+    const today = new Date().toDateString();
+    if(lastSyncDate !== today){
+      syncLiveIpos(true).catch(()=>{ /* silent — will retry next app open */ });
+    }
+  }catch(e){ /* localStorage unavailable or similar — skip silently */ }
+}
 document.addEventListener('visibilitychange', ()=>{
   if(document.visibilityState==='visible') checkAndFireLocalNotifications();
 });
