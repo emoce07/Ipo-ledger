@@ -1116,6 +1116,7 @@ function renderApply(main){
           <div class="f"><span>Lot size</span><b class="tabular">${ipo.lotSize?ipo.lotSize+' shares':'—'}</b></div>
           <div class="f"><span>Amount per lot</span><b class="tabular">${ipoLotAmount(ipo)?fmtMoney(ipoLotAmount(ipo)):'—'}</b></div>
           ${(ipo.gmpPercent!=null || ipo.gmpPrice!=null) ? `<div class="f"><span>GMP</span><b class="tabular" style="color:${Number(ipo.gmpPercent)>0?'var(--green)':Number(ipo.gmpPercent)<0?'var(--rust)':'var(--ink)'};">${ipo.gmpPrice!=null?'₹'+ipo.gmpPrice:''}${ipo.gmpPercent!=null?' ('+(Number(ipo.gmpPercent)>0?'+':'')+ipo.gmpPercent+'%)':''}</b></div>` : ''}
+          <div class="f"><span>Registrar</span><b>${ipo.registrar?esc(ipo.registrar):'Not set yet'}</b></div>
         </div>
         ${(ipo.gmpHistory && ipo.gmpHistory.length>0) ? `<button class="btn sm ghost" id="view-gmp-history-btn" style="margin-top:14px;">${ICONS.external} GMP history (${ipo.gmpHistory.length} day${ipo.gmpHistory.length>1?'s':''})</button>` : ''}
       </div>
@@ -1676,7 +1677,7 @@ function renderIpos(main){
         return `<div class="list-item">
           <div class="main" style="cursor:pointer;flex:1;" data-view-ipo="${ipo.id}">
             <div class="title">${esc(ipo.name)}</div>
-            <div class="meta">${fmtDate(ipo.openDate)}–${fmtDate(ipo.closeDate)} · ${ipoApplications(ipo.id).length} applications</div>
+            <div class="meta">${fmtDate(ipo.openDate)}–${fmtDate(ipo.closeDate)} · ${ipoApplications(ipo.id).length} applications${ipo.registrar?' · '+esc(ipo.registrar):''}</div>
           </div>
           ${ipo.dataComplete===false ? `<span class="badge closing" title="Price or lot size missing from the feed">Needs info</span>` : ''}
           <span class="badge ${st.key}">${st.label}</span>
@@ -2136,8 +2137,8 @@ function renderHistory(main){
 const REGISTRAR_FALLBACK_URLS = {
   'KFin Technologies': 'https://ipostatus.kfintech.com',
   'KFintech': 'https://ipostatus.kfintech.com',
-  'Link Intime': 'https://linkintime.co.in/initial_offer/public-issues.html',
-  'MUFG Intime': 'https://linkintime.co.in/initial_offer/public-issues.html',
+  'Link Intime': 'https://in.mpms.mufg.com/Initial_Offer/public-issues.html',
+  'MUFG Intime': 'https://in.mpms.mufg.com/Initial_Offer/public-issues.html',
   'Bigshare Services': 'https://ipo.bigshareonline.com/ipo_status.html',
   'Bigshare': 'https://ipo.bigshareonline.com/ipo_status.html',
   'Cameo Corporate Services': 'https://in.cameoindia.com/',
