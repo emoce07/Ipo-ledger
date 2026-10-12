@@ -278,7 +278,7 @@ a.link:hover{ text-decoration:underline; }
 .gmp-table th:first-child, .gmp-table td:first-child{ padding-left:4px; }
 
 .settings-actions{ display:flex; gap:10px; flex-wrap:wrap; }
-.settings-actions .btn{ flex:1 1 auto; white-space:nowrap; }
+.settings-actions .btn{ flex:0 1 auto; white-space:nowrap; }
 @media (max-width:520px){
   .settings-actions{ flex-direction:column; }
   .settings-actions .btn{ width:100%; }
@@ -708,12 +708,10 @@ function totalMoneyInBanks(){
   // "total money in tracked banks" = available + blocked (i.e. total capital across banks)
 }
 function activeApplicationsCount(){
-  return State.applications.filter(a=>{
-    const ipo = ipoById(a.ipoId);
-    if(!ipo) return false;
-    const st = ipoStatus(ipo).key;
-    return st!=='listed';
-  }).length;
+  // Active = allotment not yet decided. Once an application is marked
+  // allotted or not allotted, the outcome is known and it's no longer
+  // "active", even if the IPO itself hasn't listed yet.
+  return State.applications.filter(a=> a.allotmentStatus==='pending').length;
 }
 function upcomingIposCount(){
   return State.ipos.filter(i=> ipoStatus(i).key==='upcoming').length;
