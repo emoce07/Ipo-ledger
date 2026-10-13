@@ -199,6 +199,12 @@ label.field{ display:flex; flex-direction:column; gap:5px; font-size:12px; color
 .badge.listed{ background:var(--green-bg); color:var(--green); }
 
 .section-label{ font-size:11px; text-transform:uppercase; color:var(--ink-faint); margin:22px 0 10px; font-weight:700; letter-spacing:.6px; }
+
+.past-apps summary{ cursor:pointer; font-size:12.5px; font-weight:600; color:var(--ink-dim); padding:8px 2px; list-style:none; display:flex; align-items:center; gap:6px; }
+.past-apps summary::-webkit-details-marker{ display:none; }
+.past-apps summary::before{ content:'▸'; font-size:11px; color:var(--ink-faint); transition:transform .15s ease; }
+.past-apps[open] summary::before{ transform:rotate(90deg); }
+.past-apps summary:hover{ color:var(--ink); }
 .section-label:first-child{ margin-top:0; }
 
 .row{ display:flex; align-items:center; justify-content:space-between; gap:10px; }
@@ -433,6 +439,7 @@ const State = {
   applyFlow: { ipoId: null, bankId: null, selected: new Map() }, // applicantId -> lot count
   user: null, // {uid, displayName, email, photoURL} when signed in, else null
   cloudSyncing: false, // true while an initial cloud pull is in progress
+  lastCloudSync: null, // {ok, at} from the most recent cloud pull, shown in Settings instead of a popup
 };
 
 function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,8); }
@@ -456,6 +463,13 @@ function daysDiff(dateStr){
   return Math.round((d-today)/86400000);
 }
 function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+// allotmentDateTentative / listingDateTentative: published-but-not-final
+// dates the live feed may supply ahead of the company's confirmed
+// allotmentDate/listingDate. Shown with a "(tentative)" label and never
+// used for status badges or notifications — only a confirmed date drives
+// those, so an early or revised tentative date can't misfire a "check
+// allotment today" alert.
 
 // Pull every number out of a price band string like "₹123–₹130" or "Rs. 32 - 34"
 // (handles –, —, - as separators and stray commas) and returns the highest one.
@@ -547,10 +561,10 @@ async function cloudPullAll(){
       for(const doc of localOnly) await cloudPut(store, doc);
     }
     await loadAll();
-    toast('Synced with your account');
+    State.lastCloudSync = { ok: true, at: new Date().toISOString() };
   }catch(e){
     console.error('Cloud pull failed', e);
-    toast('Could not sync from cloud — using local data');
+    State.lastCloudSync = { ok: false, at: new Date().toISOString() };
   }
   State.cloudSyncing = false; render();
 }
@@ -1109,8 +1123,8 @@ function renderApply(main){
         <div class="facts">
           <div class="f"><span>Open</span><b>${fmtDate(ipo.openDate)}</b></div>
           <div class="f"><span>Close</span><b>${fmtDate(ipo.closeDate)}</b></div>
-          <div class="f"><span>Allotment</span><b>${fmtDate(ipo.allotmentDate)}</b></div>
-          <div class="f"><span>Listing</span><b>${fmtDate(ipo.listingDate)}</b></div>
+          <div class="f"><span>Allotment${ipo.allotmentDate?'':' (tentative)'}</span><b>${fmtDate(ipo.allotmentDate||ipo.allotmentDateTentative)}</b></div>
+          <div class="f"><span>Listing${ipo.listingDate?'':' (tentative)'}</span><b>${fmtDate(ipo.listingDate||ipo.listingDateTentative)}</b></div>
           <div class="f"><span>Lot size</span><b class="tabular">${ipo.lotSize?ipo.lotSize+' shares':'—'}</b></div>
           <div class="f"><span>Amount per lot</span><b class="tabular">${ipoLotAmount(ipo)?fmtMoney(ipoLotAmount(ipo)):'—'}</b></div>
           ${(ipo.gmpPercent!=null || ipo.gmpPrice!=null) ? `<div class="f"><span>GMP</span><b class="tabular" style="color:${Number(ipo.gmpPercent)>0?'var(--green)':Number(ipo.gmpPercent)<0?'var(--rust)':'var(--ink)'};">${ipo.gmpPrice!=null?'₹'+ipo.gmpPrice:''}${ipo.gmpPercent!=null?' ('+(Number(ipo.gmpPercent)>0?'+':'')+ipo.gmpPercent+'%)':''}</b></div>` : ''}
@@ -1304,26 +1318,39 @@ function renderApplications(main){
     }
     // summary bar
     const totalAmt = list.reduce((s,a)=>s+(a.amount||0),0);
+    const pending = list.filter(a=>a.allotmentStatus==='pending');
+    const past = list.filter(a=>a.allotmentStatus!=='pending');
+    const row = (a)=>{
+      const ipo = ipoById(a.ipoId); const bank = bankById(a.bankId); const applicant = applicantById(a.applicantId);
+      return `<div class="list-item">
+        <div class="main" style="cursor:pointer;flex:1;" data-open-ipo="${a.ipoId}">
+          <div class="title">${esc(applicant?applicant.name:'Unknown')} · ${esc(ipo?ipo.name:'Unknown IPO')}</div>
+          <div class="meta tabular">${esc(bank?bank.name:'Unknown bank')} · ${fmtDate(a.appliedDate)} · ${a.lots?a.lots+' lot'+(a.lots>1?'s':'')+' · ':''}${fmtMoney(a.amount)}</div>
+        </div>
+        ${allotmentBadge(a)}
+        <div class="actions">
+          <button class="iconbtn" data-unapply="${a.id}" title="Remove application">${ICONS.trash}</button>
+        </div>
+      </div>`;
+    };
     slot.innerHTML = `
       <div class="row" style="margin-bottom:10px;">
         <div style="font-size:12.5px;color:var(--ink-faint);">${list.length} application${list.length!==1?'s':''}</div>
         <div style="font-size:13px;font-weight:600;" class="tabular">Total applied: ${fmtMoney(totalAmt)}</div>
       </div>
-      <div class="card" style="padding:6px 12px;">
-        ${list.map(a=>{
-          const ipo = ipoById(a.ipoId); const bank = bankById(a.bankId); const applicant = applicantById(a.applicantId);
-          return `<div class="list-item">
-            <div class="main" style="cursor:pointer;flex:1;" data-open-ipo="${a.ipoId}">
-              <div class="title">${esc(applicant?applicant.name:'Unknown')} · ${esc(ipo?ipo.name:'Unknown IPO')}</div>
-              <div class="meta tabular">${esc(bank?bank.name:'Unknown bank')} · ${fmtDate(a.appliedDate)} · ${a.lots?a.lots+' lot'+(a.lots>1?'s':'')+' · ':''}${fmtMoney(a.amount)}</div>
-            </div>
-            ${allotmentBadge(a)}
-            <div class="actions">
-              <button class="iconbtn" data-unapply="${a.id}" title="Remove application">${ICONS.trash}</button>
-            </div>
-          </div>`;
-        }).join('')}
-      </div>
+      ${pending.length>0 ? `
+        <div class="card" style="padding:6px 12px;">
+          ${pending.map(row).join('')}
+        </div>
+      ` : `<div class="empty-state"><div class="t">No pending applications</div></div>`}
+      ${past.length>0 ? `
+        <details class="past-apps" style="margin-top:14px;">
+          <summary>Past applications (${past.length})</summary>
+          <div class="card" style="padding:6px 12px;margin-top:8px;">
+            ${past.map(row).join('')}
+          </div>
+        </details>
+      ` : ''}
     `;
     slot.querySelectorAll('[data-open-ipo]').forEach(el=>el.addEventListener('click',()=>openAllotmentModal(el.dataset.openIpo)));
     slot.querySelectorAll('[data-unapply]').forEach(el=>el.addEventListener('click',()=>confirmUnapply(el.dataset.unapply)));
@@ -1616,11 +1643,23 @@ async function syncLiveIpos(silent){
     }
     localStorage.setItem('ipo-feed-last-sync', new Date().toISOString());
     localStorage.setItem('ipo-feed-updated-at', data.updatedAt||'');
+    // Run the SME tagging and duplicate-merge housekeeping automatically
+    // after every sync, so neither needs a manual tap. SME tagging always
+    // auto-applies (low-risk: only sets a type label). The duplicate merge
+    // only auto-applies unambiguous cases; a genuine tie is left for the
+    // manual "Find & merge" button in Settings.
+    const smeTagged = await autoDetectSmeIposSilently();
+    const dupeResult = await autoMergeDuplicateIposSilently();
     // A silent (automatic, background) sync only shows a toast if it
     // actually changed something — otherwise it'd produce a "Synced: 0
     // added, 0 updated" toast every single morning even when nothing is
     // new, which would be noise rather than useful.
-    if(!silent || added>0 || updated>0) toast(`Synced: ${added} added, ${updated} updated`);
+    const extras = [];
+    if(smeTagged>0) extras.push(`${smeTagged} tagged SME`);
+    if(dupeResult.merged>0) extras.push(`${dupeResult.merged} duplicate(s) merged`);
+    if(!silent || added>0 || updated>0 || extras.length>0){
+      toast(`Synced: ${added} added, ${updated} updated${extras.length?' · '+extras.join(', '):''}`);
+    }
     render();
   }catch(err){
     console.error(err);
@@ -1711,10 +1750,14 @@ function openIpoModal(ipo, prefillName){
           <label class="field">Closing date<input type="date" id="f-close" value="${f.closeDate||''}"></label>
         </div>
         <div class="grid cols-2">
-          <label class="field">Allotment date<input type="date" id="f-allot" value="${f.allotmentDate||''}"></label>
-          <label class="field">Refund/unblock date<input type="date" id="f-refund" value="${f.refundDate||''}"></label>
+          <label class="field">Allotment date (confirmed)<input type="date" id="f-allot" value="${f.allotmentDate||''}"></label>
+          <label class="field">Allotment date (tentative)<input type="date" id="f-allot-tent" value="${f.allotmentDateTentative||''}"></label>
         </div>
-        <label class="field">Listing date<input type="date" id="f-listing" value="${f.listingDate||''}"></label>
+        <div class="grid cols-2">
+          <label class="field">Listing date (confirmed)<input type="date" id="f-listing" value="${f.listingDate||''}"></label>
+          <label class="field">Listing date (tentative)<input type="date" id="f-listing-tent" value="${f.listingDateTentative||''}"></label>
+        </div>
+        <label class="field">Refund/unblock date<input type="date" id="f-refund" value="${f.refundDate||''}"></label>
         <label class="field">Price band (display, e.g. ₹32–₹34)<input type="text" id="f-price" value="${esc(f.priceBand||'')}" placeholder="e.g. ₹32–₹34"></label>
         <div class="grid cols-2">
           <label class="field">Max price / share (₹)<input type="number" id="f-maxprice" value="${f.maxPrice||''}" placeholder="e.g. 34"></label>
@@ -1765,8 +1808,10 @@ function openIpoModal(ipo, prefillName){
     obj.openDate = document.getElementById('f-open').value;
     obj.closeDate = document.getElementById('f-close').value;
     obj.allotmentDate = document.getElementById('f-allot').value;
+    obj.allotmentDateTentative = document.getElementById('f-allot-tent').value;
     obj.refundDate = document.getElementById('f-refund').value;
     obj.listingDate = document.getElementById('f-listing').value;
+    obj.listingDateTentative = document.getElementById('f-listing-tent').value;
     obj.priceBand = document.getElementById('f-price').value.trim();
     obj.maxPrice = Number(document.getElementById('f-maxprice').value)||0;
     obj.lotSize = Number(document.getElementById('f-lot').value)||0;
@@ -1789,6 +1834,34 @@ async function findDuplicateIpos(){
     groups.get(key).push(ipo);
   }
   return Array.from(groups.values()).filter(g=>g.length>1);
+}
+// Runs after each sync with no popup. Only merges a pair when one entry
+// strictly outscores the other on data completeness — an unambiguous case.
+// A genuine tie is left alone for the manual "Find & merge" button in
+// Settings, since picking one of two equally-complete entries isn't a call
+// this should make silently.
+async function autoMergeDuplicateIposSilently(){
+  const dupeGroups = await findDuplicateIpos();
+  if(dupeGroups.length===0) return { merged: 0, apps: 0 };
+  const scoreIpo = (ipo) => (ipo.lotSize>0?1:0) + (ipo.maxPrice>0?1:0) + (ipo.gmpPercent!=null?1:0) + (ipo.registrar?1:0);
+  let merged = 0, mergedApps = 0;
+  for(const group of dupeGroups){
+    const sorted = [...group].sort((a,b)=> scoreIpo(b)-scoreIpo(a));
+    const [keep, ...rest] = sorted;
+    if(scoreIpo(sorted[0]) === scoreIpo(sorted[1])) continue; // genuine tie — leave for manual review
+    for(const removedIpo of rest){
+      const apps = State.applications.filter(a=>a.ipoId===removedIpo.id);
+      for(const app of apps){
+        app.ipoId = keep.id;
+        await idbPut('applications', app);
+        mergedApps++;
+      }
+      await idbDelete('ipos', removedIpo.id);
+      State.ipos = State.ipos.filter(i=>i.id!==removedIpo.id);
+      merged++;
+    }
+  }
+  return { merged, apps: mergedApps };
 }
 async function mergeDuplicateIpos(){
   const dupeGroups = await findDuplicateIpos();
@@ -1847,6 +1920,22 @@ async function mergeDuplicateIpos(){
     toast(`Merged ${dupeGroups.length} duplicate${dupeGroups.length>1?'s':''}${mergedApps>0?`, moved ${mergedApps} application(s)`:''}`);
     render();
   });
+}
+// Runs after each sync with no popup — tags every IPO whose amount-per-lot
+// clears the SME threshold. Nothing is deleted here (only a type label is
+// set), so unlike the duplicate merge this is low-risk enough to always
+// auto-apply; the manual button + checklist in Settings still exists to
+// review or correct any tag afterward.
+async function autoDetectSmeIposSilently(){
+  const SME_THRESHOLD = 90000;
+  const checkable = State.ipos.filter(i=> (i.ipoType||'mainboard')==='mainboard');
+  const candidates = checkable.filter(i=> ipoLotAmount(i) >= SME_THRESHOLD);
+  for(const ipo of candidates){
+    ipo.ipoType = 'sme';
+    if(!ipo.minLots || ipo.minLots<2) ipo.minLots = 2;
+    await idbPut('ipos', ipo);
+  }
+  return candidates.length;
 }
 async function autoDetectSmeIpos(){
   const SME_THRESHOLD = 90000; // amount-per-lot above this is almost always SME, not mainboard
@@ -2308,6 +2397,11 @@ function renderSettings(main){
           </div>
         </div>
         <p style="font-size:12.5px;color:var(--green);margin:10px 0 0;">✅ Your data syncs to this account — sign in with the same Google account on any device to see it there too.</p>
+        ${State.lastCloudSync ? `
+          <p style="font-size:11.5px;color:${State.lastCloudSync.ok?'var(--ink-faint)':'var(--rust)'};margin:4px 0 0;">
+            ${State.lastCloudSync.ok?'Last synced':'Last sync failed'} ${new Date(State.lastCloudSync.at).toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}
+          </p>
+        ` : ''}
         <button class="btn ghost" id="settings-signout-btn" style="margin-top:12px;">Sign out</button>
       ` : `
         <p style="font-size:13px;color:var(--ink-dim);margin:0 0 12px;">Sign in with Google to access your data from any device. Without signing in, your data stays only on this device.</p>
