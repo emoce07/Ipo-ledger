@@ -1613,8 +1613,10 @@ async function syncLiveIpos(silent){
       obj.openDate = isoToDate(item.openDate) || obj.openDate || '';
       obj.closeDate = isoToDate(item.closeDate) || obj.closeDate || '';
       obj.allotmentDate = isoToDate(item.allotmentDate) || obj.allotmentDate || '';
+      obj.allotmentDateTentative = isoToDate(item.allotmentDateTentative) || obj.allotmentDateTentative || '';
       obj.refundDate = isoToDate(item.refundDate) || obj.refundDate || '';
       obj.listingDate = isoToDate(item.listingDate) || obj.listingDate || '';
+      obj.listingDateTentative = isoToDate(item.listingDateTentative) || obj.listingDateTentative || '';
       obj.priceBand = item.priceBand || obj.priceBand || '';
       // maxPrice: trust an explicit non-zero value from the feed first;
       // otherwise derive it straight from the (just-updated) price band text,
