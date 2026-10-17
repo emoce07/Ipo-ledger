@@ -1129,6 +1129,7 @@ function renderApply(main){
           <div class="f"><span>Amount per lot</span><b class="tabular">${ipoLotAmount(ipo)?fmtMoney(ipoLotAmount(ipo)):'—'}</b></div>
           ${(ipo.gmpPercent!=null || ipo.gmpPrice!=null) ? `<div class="f"><span>GMP</span><b class="tabular" style="color:${Number(ipo.gmpPercent)>0?'var(--green)':Number(ipo.gmpPercent)<0?'var(--rust)':'var(--ink)'};">${ipo.gmpPrice!=null?'₹'+ipo.gmpPrice:''}${ipo.gmpPercent!=null?' ('+(Number(ipo.gmpPercent)>0?'+':'')+ipo.gmpPercent+'%)':''}</b></div>` : ''}
           <div class="f"><span>Registrar</span><b>${ipo.registrar?esc(ipo.registrar):'Not set yet'}</b></div>
+          ${ipo.ipoSize?`<div class="f"><span>IPO size</span><b>${esc(ipo.ipoSize)}</b></div>`:''}
         </div>
         ${(ipo.gmpHistory && ipo.gmpHistory.length>0) ? `<button class="btn sm ghost" id="view-gmp-history-btn" style="margin-top:14px;">${ICONS.external} GMP history (${ipo.gmpHistory.length} day${ipo.gmpHistory.length>1?'s':''})</button>` : ''}
       </div>
@@ -1316,10 +1317,15 @@ function renderApplications(main){
       slot.innerHTML = `<div class="empty-state">${ICONS.list}<div class="t">No applications match</div><div class="s">${rows.length===0?'Mark some applications from Apply / Manage.':'Try clearing a filter.'}</div></div>`;
       return;
     }
-    // summary bar
-    const totalAmt = list.reduce((s,a)=>s+(a.amount||0),0);
+    // summary bar — "blocked" is pending applications only (money still
+    // tied up, nothing decided yet). "Total applied" is the lifetime sum
+    // across every application, pending or resolved — this isn't money
+    // currently at risk, it's a running history total, since a Not
+    // Allotted application already had its amount refunded/unblocked.
     const pending = list.filter(a=>a.allotmentStatus==='pending');
     const past = list.filter(a=>a.allotmentStatus!=='pending');
+    const blockedAmt = pending.reduce((s,a)=>s+(a.amount||0),0);
+    const totalAmt = list.reduce((s,a)=>s+(a.amount||0),0);
     const row = (a)=>{
       const ipo = ipoById(a.ipoId); const bank = bankById(a.bankId); const applicant = applicantById(a.applicantId);
       return `<div class="list-item">
@@ -1334,9 +1340,13 @@ function renderApplications(main){
       </div>`;
     };
     slot.innerHTML = `
+      <div class="row" style="margin-bottom:4px;">
+        <div style="font-size:12.5px;color:var(--ink-faint);">${pending.length} pending</div>
+        <div style="font-size:13px;font-weight:600;" class="tabular">Currently blocked: ${fmtMoney(blockedAmt)}</div>
+      </div>
       <div class="row" style="margin-bottom:10px;">
-        <div style="font-size:12.5px;color:var(--ink-faint);">${list.length} application${list.length!==1?'s':''}</div>
-        <div style="font-size:13px;font-weight:600;" class="tabular">Total applied: ${fmtMoney(totalAmt)}</div>
+        <div style="font-size:11px;color:var(--ink-faint);">${list.length} application${list.length!==1?'s':''} total</div>
+        <div style="font-size:11px;color:var(--ink-faint);" class="tabular">Lifetime applied: ${fmtMoney(totalAmt)}</div>
       </div>
       ${pending.length>0 ? `
         <div class="card" style="padding:6px 12px;">
@@ -1625,6 +1635,7 @@ async function syncLiveIpos(silent){
       obj.maxPrice = Number(item.maxPrice) || parseMaxPriceFromBand(obj.priceBand) || obj.maxPrice || 0;
       obj.lotSize = Number(item.lotSize)||obj.lotSize||0;
       obj.registrar = item.registrar || obj.registrar || '';
+      obj.ipoSize = item.ipoSize || obj.ipoSize || '';
       obj.registrarUrl = item.registrarUrl || obj.registrarUrl || '';
       obj.notes = item.notes || obj.notes || '';
       obj.gmpPercent = (item.gmpPercent!=null && item.gmpPercent!=='') ? Number(item.gmpPercent) : (obj.gmpPercent ?? null);
