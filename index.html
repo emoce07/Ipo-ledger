@@ -311,6 +311,7 @@ a.link:hover{ text-decoration:underline; }
 
 /* ---------- ICONS (tiny inline svg set) ---------- */
 const ICONS = {
+  back: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>`,
   list: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 6h13M8 12h13M8 18h13"/><path d="M3 6h.01M3 12h.01M3 18h.01"/></svg>`,
   dashboard: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="3" width="8" height="5" rx="1.5"/><rect x="13" y="12" width="8" height="9" rx="1.5"/><rect x="3" y="13" width="8" height="8" rx="1.5"/></svg>`,
   apply: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 12l2 2 4-4"/><rect x="3" y="3" width="18" height="18" rx="3"/></svg>`,
@@ -771,7 +772,7 @@ const NAV = [
   {key:'history', label:'History', icon:'history'},
   {key:'settings', label:'Settings', icon:'settings'},
 ];
-const NAV_MOBILE = ['dashboard','apply','applications','ipos','settings'];
+const NAV_MOBILE = ['dashboard','apply','applications','ipos','profit','settings'];
 
 const VALID_ROUTES = NAV.map(n=>n.key);
 function go(route, {replace=false}={}){
@@ -1268,104 +1269,131 @@ async function markSelectedApplied(ipo, bank, lotAmt){
 
 /* ==================== APPLICATIONS (full list) ==================== */
 function renderApplications(main){
-  main._appFilters = main._appFilters || { ipo:'', bank:'', applicant:'', status:'' };
-  const f = main._appFilters;
+  // Drill-down: IPO list -> banks within an IPO -> applicants within a bank.
+  // Navigation state lives on `main` so it survives re-renders in this session.
+  main._appNav = main._appNav || { ipoId:null, bankId:null };
+  const nav = main._appNav;
+  const apps = State.applications.slice().sort((a,b)=>(b.appliedDate||'').localeCompare(a.appliedDate||''));
 
-  const rows = State.applications.slice().sort((a,b)=>(b.appliedDate||'').localeCompare(a.appliedDate||''));
+  const sum = (list)=>list.reduce((t,a)=>t+(a.amount||0),0);
+  const isPending = (a)=>a.allotmentStatus==='pending';
 
-  main.innerHTML = `
-    <h1 class="page-title">Applications</h1>
-    <p class="page-sub">Every IPO application — which applicant, which bank, current status</p>
+  // Guard against stale nav (IPO/bank deleted or last application removed)
+  if(nav.ipoId && !apps.some(a=>a.ipoId===nav.ipoId)){ nav.ipoId=null; nav.bankId=null; }
+  if(nav.bankId && !apps.some(a=>a.ipoId===nav.ipoId && a.bankId===nav.bankId)){ nav.bankId=null; }
 
-    <div class="grid cols-4" style="margin-bottom:16px;">
-      <label class="field">IPO
-        <select id="filt-ipo"><option value="">All IPOs</option>${State.ipos.map(i=>`<option value="${i.id}" ${f.ipo===i.id?'selected':''}>${esc(i.name)}</option>`).join('')}</select>
-      </label>
-      <label class="field">Bank
-        <select id="filt-bank"><option value="">All banks</option>${State.banks.map(b=>`<option value="${b.id}" ${f.bank===b.id?'selected':''}>${esc(b.name)}</option>`).join('')}</select>
-      </label>
-      <label class="field">Applicant
-        <select id="filt-applicant"><option value="">All applicants</option>${State.applicants.map(a=>`<option value="${a.id}" ${f.applicant===a.id?'selected':''}>${esc(a.name)}</option>`).join('')}</select>
-      </label>
-      <label class="field">Status
-        <select id="filt-status">
-          <option value="">All statuses</option>
-          <option value="pending" ${f.status==='pending'?'selected':''}>Pending</option>
-          <option value="not_allotted" ${f.status==='not_allotted'?'selected':''}>Not allotted — refunded</option>
-          <option value="allotted" ${f.status==='allotted'?'selected':''}>Allotted</option>
-        </select>
-      </label>
-    </div>
+  const backBar = (label, id)=>`
+    <button class="btn" id="${id}" style="margin-bottom:12px;display:inline-flex;align-items:center;gap:6px;">
+      ${ICONS.back}<span>${esc(label)}</span>
+    </button>`;
 
-    <div id="app-list-slot"></div>
-  `;
+  const row = (a)=>{
+    const applicant = applicantById(a.applicantId);
+    return `<div class="list-item">
+      <div class="main" style="cursor:pointer;flex:1;" data-open-ipo="${a.ipoId}">
+        <div class="title">${esc(applicant?applicant.name:'Unknown')}</div>
+        <div class="meta tabular">${fmtDate(a.appliedDate)} · ${a.lots?a.lots+' lot'+(a.lots>1?'s':'')+' · ':''}${fmtMoney(a.amount)}</div>
+      </div>
+      ${allotmentBadge(a)}
+      <div class="actions">
+        <button class="iconbtn" data-unapply="${a.id}" title="Remove application">${ICONS.trash}</button>
+      </div>
+    </div>`;
+  };
 
-  ['ipo','bank','applicant','status'].forEach(k=>{
-    document.getElementById(`filt-${k}`).addEventListener('change', (e)=>{ f[k]=e.target.value; renderList(); });
-  });
+  // ---------- Level 1: IPOs ----------
+  function viewIpos(){
+    const groups = {};
+    apps.forEach(a=>{ (groups[a.ipoId] = groups[a.ipoId] || []).push(a); });
+    const entries = Object.keys(groups).map(id=>({ id, ipo:ipoById(id), list:groups[id] }));
+    const active = entries.filter(e=>e.list.some(isPending));
+    const past = entries.filter(e=>!e.list.some(isPending));
+    const blocked = sum(apps.filter(isPending));
 
-  function renderList(){
-    let list = rows.filter(a=>{
-      if(f.ipo && a.ipoId!==f.ipo) return false;
-      if(f.bank && a.bankId!==f.bank) return false;
-      if(f.applicant && a.applicantId!==f.applicant) return false;
-      if(f.status && a.allotmentStatus!==f.status) return false;
-      return true;
-    });
-    const slot = document.getElementById('app-list-slot');
-    if(list.length===0){
-      slot.innerHTML = `<div class="empty-state">${ICONS.list}<div class="t">No applications match</div><div class="s">${rows.length===0?'Mark some applications from Apply / Manage.':'Try clearing a filter.'}</div></div>`;
-      return;
-    }
-    // summary bar — "blocked" is pending applications only (money still
-    // tied up, nothing decided yet). "Total applied" is the lifetime sum
-    // across every application, pending or resolved — this isn't money
-    // currently at risk, it's a running history total, since a Not
-    // Allotted application already had its amount refunded/unblocked.
-    const pending = list.filter(a=>a.allotmentStatus==='pending');
-    const past = list.filter(a=>a.allotmentStatus!=='pending');
-    const blockedAmt = pending.reduce((s,a)=>s+(a.amount||0),0);
-    const totalAmt = list.reduce((s,a)=>s+(a.amount||0),0);
-    const row = (a)=>{
-      const ipo = ipoById(a.ipoId); const bank = bankById(a.bankId); const applicant = applicantById(a.applicantId);
-      return `<div class="list-item">
-        <div class="main" style="cursor:pointer;flex:1;" data-open-ipo="${a.ipoId}">
-          <div class="title">${esc(applicant?applicant.name:'Unknown')} · ${esc(ipo?ipo.name:'Unknown IPO')}</div>
-          <div class="meta tabular">${esc(bank?bank.name:'Unknown bank')} · ${fmtDate(a.appliedDate)} · ${a.lots?a.lots+' lot'+(a.lots>1?'s':'')+' · ':''}${fmtMoney(a.amount)}</div>
+    const card = (e)=>{
+      const pend = e.list.filter(isPending);
+      const banks = new Set(e.list.map(a=>a.bankId)).size;
+      return `<div class="list-item" style="cursor:pointer;" data-ipo="${e.id}">
+        <div class="main" style="flex:1;">
+          <div class="title">${esc(e.ipo?e.ipo.name:'Unknown IPO')}</div>
+          <div class="meta tabular">${e.list.length} application${e.list.length!==1?'s':''} · ${banks} bank${banks!==1?'s':''} · ${fmtMoney(sum(e.list))}</div>
         </div>
-        ${allotmentBadge(a)}
-        <div class="actions">
-          <button class="iconbtn" data-unapply="${a.id}" title="Remove application">${ICONS.trash}</button>
-        </div>
+        <div style="font-size:11.5px;color:${pend.length?'var(--seal)':'var(--ink-faint)'};font-weight:600;">${pend.length?pend.length+' pending':'Done'}</div>
       </div>`;
     };
-    slot.innerHTML = `
-      <div class="row" style="margin-bottom:4px;">
-        <div style="font-size:12.5px;color:var(--ink-faint);">${pending.length} pending</div>
-        <div style="font-size:13px;font-weight:600;" class="tabular">Currently blocked: ${fmtMoney(blockedAmt)}</div>
-      </div>
-      <div class="row" style="margin-bottom:10px;">
-        <div style="font-size:11px;color:var(--ink-faint);">${list.length} application${list.length!==1?'s':''} total</div>
-        <div style="font-size:11px;color:var(--ink-faint);" class="tabular">Lifetime applied: ${fmtMoney(totalAmt)}</div>
-      </div>
-      ${pending.length>0 ? `
-        <div class="card" style="padding:6px 12px;">
-          ${pending.map(row).join('')}
+
+    main.innerHTML = `
+      <h1 class="page-title">Applications</h1>
+      <p class="page-sub">Tap an IPO to see banks, then applicants</p>
+      ${apps.length===0 ? `<div class="empty-state">${ICONS.list}<div class="t">No applications yet</div><div class="s">Mark some applications from Apply / Manage.</div></div>` : `
+        <div class="row" style="margin-bottom:4px;">
+          <div style="font-size:12.5px;color:var(--ink-faint);">${apps.filter(isPending).length} pending</div>
+          <div style="font-size:13px;font-weight:600;" class="tabular">Currently blocked: ${fmtMoney(blocked)}</div>
         </div>
-      ` : `<div class="empty-state"><div class="t">No pending applications</div></div>`}
-      ${past.length>0 ? `
-        <details class="past-apps" style="margin-top:14px;">
-          <summary>Past applications (${past.length})</summary>
-          <div class="card" style="padding:6px 12px;margin-top:8px;">
-            ${past.map(row).join('')}
-          </div>
-        </details>
-      ` : ''}
+        <div class="row" style="margin-bottom:10px;">
+          <div style="font-size:11px;color:var(--ink-faint);">${apps.length} application${apps.length!==1?'s':''} total</div>
+          <div style="font-size:11px;color:var(--ink-faint);" class="tabular">Lifetime applied: ${fmtMoney(sum(apps))}</div>
+        </div>
+        ${active.length ? `<div class="card" style="padding:6px 12px;">${active.map(card).join('')}</div>` : `<div class="empty-state"><div class="t">No pending applications</div></div>`}
+        ${past.length ? `
+          <details class="past-apps" style="margin-top:14px;">
+            <summary>Past IPOs (${past.length})</summary>
+            <div class="card" style="padding:6px 12px;margin-top:8px;">${past.map(card).join('')}</div>
+          </details>` : ''}
+      `}
     `;
-    slot.querySelectorAll('[data-open-ipo]').forEach(el=>el.addEventListener('click',()=>openAllotmentModal(el.dataset.openIpo)));
-    slot.querySelectorAll('[data-unapply]').forEach(el=>el.addEventListener('click',()=>confirmUnapply(el.dataset.unapply)));
+    main.querySelectorAll('[data-ipo]').forEach(el=>el.addEventListener('click',()=>{ nav.ipoId=el.dataset.ipo; nav.bankId=null; render(); }));
   }
-  renderList();
+
+  // ---------- Level 2: banks within an IPO ----------
+  function viewBanks(){
+    const ipo = ipoById(nav.ipoId);
+    const list = apps.filter(a=>a.ipoId===nav.ipoId);
+    const groups = {};
+    list.forEach(a=>{ (groups[a.bankId] = groups[a.bankId] || []).push(a); });
+    const cards = Object.keys(groups).map(bid=>{
+      const bank = bankById(bid); const g = groups[bid]; const pend = g.filter(isPending);
+      return `<div class="list-item" style="cursor:pointer;" data-bank="${bid}">
+        <div class="main" style="flex:1;">
+          <div class="title">${esc(bank?bank.name:'Unknown bank')}</div>
+          <div class="meta tabular">${g.length} applicant${g.length!==1?'s':''} · ${fmtMoney(sum(g))}</div>
+        </div>
+        <div style="font-size:11.5px;color:${pend.length?'var(--seal)':'var(--ink-faint)'};font-weight:600;">${pend.length?pend.length+' pending':'Done'}</div>
+      </div>`;
+    }).join('');
+    main.innerHTML = `
+      ${backBar('All IPOs','app-back')}
+      <h1 class="page-title">${esc(ipo?ipo.name:'IPO')}</h1>
+      <p class="page-sub">${list.length} application${list.length!==1?'s':''} · ${fmtMoney(sum(list))} · pick a bank</p>
+      <div class="card" style="padding:6px 12px;">${cards}</div>
+    `;
+    document.getElementById('app-back').addEventListener('click',()=>{ nav.ipoId=null; nav.bankId=null; render(); });
+    main.querySelectorAll('[data-bank]').forEach(el=>el.addEventListener('click',()=>{ nav.bankId=el.dataset.bank; render(); }));
+  }
+
+  // ---------- Level 3: applicants within a bank ----------
+  function viewApplicants(){
+    const ipo = ipoById(nav.ipoId); const bank = bankById(nav.bankId);
+    const list = apps.filter(a=>a.ipoId===nav.ipoId && a.bankId===nav.bankId);
+    const pend = list.filter(isPending);
+    main.innerHTML = `
+      ${backBar(ipo?ipo.name:'Back','app-back')}
+      <h1 class="page-title">${esc(bank?bank.name:'Bank')}</h1>
+      <p class="page-sub">${esc(ipo?ipo.name:'')} · ${list.length} applicant${list.length!==1?'s':''} · ${pend.length} pending · ${fmtMoney(sum(list))}</p>
+      <div class="card" style="padding:6px 12px;">${list.map(row).join('')}</div>
+    `;
+    document.getElementById('app-back').addEventListener('click',()=>{ nav.bankId=null; render(); });
+    main.querySelectorAll('[data-open-ipo]').forEach(el=>el.addEventListener('click',()=>openAllotmentModal(el.dataset.openIpo)));
+    main.querySelectorAll('[data-unapply]').forEach(el=>el.addEventListener('click',()=>confirmUnapply(el.dataset.unapply)));
+  }
+
+  function render(){
+    if(!nav.ipoId) viewIpos();
+    else if(!nav.bankId) viewBanks();
+    else viewApplicants();
+    window.scrollTo(0,0);
+  }
+  render();
 }
 function confirmUnapply(appId){
   const app = State.applications.find(a=>a.id===appId);
