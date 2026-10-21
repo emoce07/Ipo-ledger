@@ -775,8 +775,11 @@ function toast(msg){
 
 /* ---------- MODAL ---------- */
 function closeModal(){
-  document.getElementById('modal-root').innerHTML='';
+  const root = document.getElementById('modal-root');
+  if(!root.innerHTML.trim()) return;      // already closed (guards against double calls)
+  root.innerHTML='';
   const f = State._onModalClose; State._onModalClose = null;
+  if(history.state && history.state.modal){ State._ignorePop = true; history.back(); }
   if(f) f();
 }
 function openModal(html){
@@ -802,21 +805,31 @@ const NAV_MOBILE = ['dashboard','apply','applications','ipos','profit','settings
 
 const VALID_ROUTES = NAV.map(n=>n.key);
 function go(route, {replace=false}={}){
+  const deepApps = route==='applications' && State.appNav && State.appNav.ipoId;
   State.route = route;
+  if(route==='applications') State.appNav = { ipoId:null, bankId:null };  // tapping the tab starts at the IPO list
   const hash = '#'+route;
-  // Push a real history entry so the hardware/gesture Back button moves
-  // between in-app tabs first, instead of immediately exiting the app.
-  // Also keep the URL hash in sync so a refresh can restore this tab.
-  if(replace) history.replaceState({route}, '', hash);
-  else if(location.hash !== hash) history.pushState({route}, '', hash);
+  // Real history entries so the phone's Back button steps back through
+  // what you actually did (tab -> drill-down levels -> allotment screen)
+  // instead of jumping between tabs.
+  if(replace || (location.hash === hash && !deepApps)) history.replaceState({route}, '', hash);
+  else history.pushState({route}, '', hash);
   render();
   window.scrollTo(0,0);
 }
 window.addEventListener('popstate', (e)=>{
-  const route = (e.state && e.state.route) || (location.hash||'').replace('#','') || 'dashboard';
+  if(State._ignorePop){ State._ignorePop = false; return; }   // we triggered this ourselves when closing the allotment screen
+  const st = e.state || {};
+  const mr = document.getElementById('modal-root');
+  const hadModal = !!(mr && mr.innerHTML.trim());
+  if(hadModal){ mr.innerHTML = ''; State._onModalClose = null; }   // Back closes the allotment screen first
+  const route = st.route || (location.hash||'').replace('#','') || 'dashboard';
+  const routeChanged = State.route !== route;
   State.route = VALID_ROUTES.includes(route) ? route : 'dashboard';
+  State.appNav = st.nav ? { ipoId: st.nav.ipoId||null, bankId: st.nav.bankId||null } : { ipoId:null, bankId:null };
+  const y = window.scrollY;
   render();
-  window.scrollTo(0,0);
+  if(hadModal && !routeChanged) window.scrollTo(0,y); else window.scrollTo(0,0);
 });
 
 function renderShell(){
@@ -1363,7 +1376,7 @@ function renderApplications(main){
           </details>` : ''}
       `}
     `;
-    main.querySelectorAll('[data-ipo]').forEach(el=>el.addEventListener('click',()=>{ nav.ipoId=el.dataset.ipo; nav.bankId=null; go(); }));
+    main.querySelectorAll('[data-ipo]').forEach(el=>el.addEventListener('click',()=>{ open(el.dataset.ipo, null); }));
   }
 
   // ---------- Level 2: banks within an IPO ----------
@@ -1388,8 +1401,8 @@ function renderApplications(main){
       <p class="page-sub">${list.length} application${list.length!==1?'s':''} · ${fmtMoney(sum(list))} · pick a bank</p>
       <div class="card" style="padding:6px 12px;">${cards}</div>
     `;
-    document.getElementById('app-back').addEventListener('click',()=>{ nav.ipoId=null; nav.bankId=null; go(); });
-    main.querySelectorAll('[data-bank]').forEach(el=>el.addEventListener('click',()=>{ nav.bankId=el.dataset.bank; go(); }));
+    document.getElementById('app-back').addEventListener('click',()=>{ history.back(); });
+    main.querySelectorAll('[data-bank]').forEach(el=>el.addEventListener('click',()=>{ open(nav.ipoId, el.dataset.bank); }));
   }
 
   // ---------- Level 3: applicants within a bank ----------
@@ -1403,7 +1416,7 @@ function renderApplications(main){
       <p class="page-sub">${esc(ipo?ipo.name:'')} · ${list.length} applicant${list.length!==1?'s':''} · ${pend.length} pending · ${fmtMoney(sum(list))}</p>
       <div class="card" style="padding:6px 12px;">${list.map(row).join('')}</div>
     `;
-    document.getElementById('app-back').addEventListener('click',()=>{ nav.bankId=null; go(); });
+    document.getElementById('app-back').addEventListener('click',()=>{ history.back(); });
     main.querySelectorAll('[data-open-ipo]').forEach(el=>el.addEventListener('click',()=>openAllotmentModal(el.dataset.openIpo)));
     main.querySelectorAll('[data-unapply]').forEach(el=>el.addEventListener('click',()=>confirmUnapply(el.dataset.unapply)));
   }
@@ -1413,7 +1426,11 @@ function renderApplications(main){
     else if(!nav.bankId) viewBanks();
     else viewApplicants();
   }
-  const go = ()=>{ render(); window.scrollTo(0,0); };
+  const open = (ipoId, bankId)=>{
+    nav.ipoId = ipoId; nav.bankId = bankId;
+    history.pushState({ route:'applications', nav:{ ipoId, bankId } }, '', '#applications');
+    render(); window.scrollTo(0,0);
+  };
   render();
 }
 function confirmUnapply(appId){
@@ -2424,6 +2441,7 @@ function openAllotmentModal(ipoId){
   }
 
   openModal(`<div class="modal" id="allot-modal" style="max-width:520px;"></div>`);
+  history.pushState({ route:State.route, nav: State.route==='applications' ? { ipoId:State.appNav.ipoId, bankId:State.appNav.bankId } : undefined, modal:true }, '', '#'+State.route);
   const el = document.getElementById('allot-modal');
 
   function paint(){
@@ -2432,7 +2450,6 @@ function openAllotmentModal(ipoId){
     el.scrollTop = top;
     const det = el.querySelector('.al-done');
     if(det) det.addEventListener('toggle', ()=>{ doneOpen = det.open; });
-    el.querySelectorAll('[data-close]').forEach(b=>b.addEventListener('click', closeModal));
 
     el.querySelectorAll('[data-check-allotment]').forEach(btn=>btn.addEventListener('click', async ()=>{
       const app = State.applications.find(x=>x.id===btn.dataset.checkAllotment);
