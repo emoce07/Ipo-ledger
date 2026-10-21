@@ -774,8 +774,13 @@ function toast(msg){
 }
 
 /* ---------- MODAL ---------- */
-function closeModal(){ document.getElementById('modal-root').innerHTML=''; }
+function closeModal(){
+  document.getElementById('modal-root').innerHTML='';
+  const f = State._onModalClose; State._onModalClose = null;
+  if(f) f();
+}
 function openModal(html){
+  State._onModalClose = null;
   document.getElementById('modal-root').innerHTML = `<div class="modal-bg" data-close="1">${html}</div>`;
   document.querySelector('.modal-bg').addEventListener('click', (e)=>{ if(e.target.dataset.close) closeModal(); });
 }
@@ -1292,8 +1297,8 @@ async function markSelectedApplied(ipo, bank, lotAmt){
 function renderApplications(main){
   // Drill-down: IPO list -> banks within an IPO -> applicants within a bank.
   // Navigation state lives on `main` so it survives re-renders in this session.
-  main._appNav = main._appNav || { ipoId:null, bankId:null };
-  const nav = main._appNav;
+  State.appNav = State.appNav || { ipoId:null, bankId:null };
+  const nav = State.appNav;
   const apps = State.applications.slice().sort((a,b)=>(b.appliedDate||'').localeCompare(a.appliedDate||''));
 
   const sum = (list)=>list.reduce((t,a)=>t+(a.amount||0),0);
@@ -1726,10 +1731,10 @@ async function syncLiveIpos(silent){
 }
 
 function renderIpos(main){
-  main._ipoTab = main._ipoTab || 'active';
-  main._ipoTypeTab = main._ipoTypeTab || 'mainboard';
-  const tab = main._ipoTab;
-  const typeTab = main._ipoTypeTab;
+  State._ipoTab = State._ipoTab || 'active';
+  State._ipoTypeTab = State._ipoTypeTab || 'mainboard';
+  const tab = State._ipoTab;
+  const typeTab = State._ipoTypeTab;
   const lastSync = localStorage.getItem('ipo-feed-last-sync');
   const feedUpdatedAt = localStorage.getItem('ipo-feed-updated-at');
   const smeCount = State.ipos.filter(i=>i.ipoType==='sme').length;
@@ -1758,8 +1763,8 @@ function renderIpos(main){
   `;
   document.getElementById('add-ipo').addEventListener('click',()=>openIpoModal(null));
   document.getElementById('sync-ipos-btn').addEventListener('click', ()=>syncLiveIpos(false));
-  main.querySelectorAll('[data-tab]').forEach(b=>b.addEventListener('click',()=>{ main._ipoTab=b.dataset.tab; renderIpos(main); }));
-  main.querySelectorAll('[data-type-tab]').forEach(b=>b.addEventListener('click',()=>{ main._ipoTypeTab=b.dataset.typeTab; renderIpos(main); }));
+  main.querySelectorAll('[data-tab]').forEach(b=>b.addEventListener('click',()=>{ State._ipoTab=b.dataset.tab; renderIpos(main); }));
+  main.querySelectorAll('[data-type-tab]').forEach(b=>b.addEventListener('click',()=>{ State._ipoTypeTab=b.dataset.typeTab; renderIpos(main); }));
   let list = State.ipos.filter(i=> (i.ipoType||'mainboard')===typeTab );
   if(tab==='active') list = list.filter(i=>ipoStatus(i).key!=='listed' && ipoStatus(i).key!=='closed');
   list.sort((a,b)=>(a.openDate||'').localeCompare(b.openDate||''));
@@ -2206,8 +2211,8 @@ function openSaleModal(){
 
 /* ==================== HISTORY (also allotment management) ==================== */
 function renderHistory(main){
-  main._historyTab = main._historyTab || 'ipos';
-  const tab = main._historyTab;
+  State._historyTab = State._historyTab || 'ipos';
+  const tab = State._historyTab;
   main.innerHTML = `
     <h1 class="page-title">History</h1>
     <p class="page-sub">Past IPOs, allotment management, and search across everything</p>
@@ -2457,7 +2462,7 @@ function openAllotmentModal(ipoId){
       }
       await idbPut('applications', app);
       paint();      // redraw only the modal body: no animation, scroll position kept
-      render();     // refresh the page behind it
+      State._onModalClose = ()=>{ const y=window.scrollY; render(); window.scrollTo(0,y); };  // refresh page behind it once, on close
     }));
   }
   paint();
