@@ -297,6 +297,25 @@ a.link:hover{ text-decoration:underline; }
 
 ::-webkit-scrollbar{ width:8px; height:8px; }
 ::-webkit-scrollbar-thumb{ background:var(--line); border-radius:4px; }
+
+/* --- compact allotment list --- */
+.al-bank{ font-size:11px; text-transform:uppercase; letter-spacing:.6px; font-weight:700; color:var(--ink-faint); margin:12px 0 2px; }
+.al-row{ display:flex; align-items:center; gap:6px; padding:8px 0; border-bottom:1px solid var(--line); }
+.al-row:last-child{ border-bottom:none; }
+.al-main{ flex:1; min-width:0; }
+.al-name{ font-size:13.5px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.al-meta{ font-size:11.5px; color:var(--ink-faint); margin-top:1px; }
+.al-icon{ padding:6px 8px; }
+.al-done{ margin-top:14px; border-top:1px solid var(--line); padding-top:8px; }
+.al-done summary{ font-size:12.5px; color:var(--ink-faint); cursor:pointer; padding:4px 0; }
+/* --- tighter, calmer layout across the app --- */
+.page-sub{ margin-bottom:12px; }
+.card{ padding:14px; }
+.list-item{ padding:10px 2px; }
+.section-label{ margin:16px 0 8px; }
+.modal{ padding:16px 16px 18px; }
+.modal-actions{ margin-top:12px; }
+@media (max-width:760px){ main{ padding:12px 12px 84px; } .page-title{ font-size:18px; } }
 </style>
 </head>
 <body>
@@ -619,6 +638,8 @@ function setupAuthListener(){
 
 /* ---------- DERIVED / COMPUTED ---------- */
 function bankById(id){ return State.banks.find(b=>b.id===id); }
+function bankPos(id){ const i=State.banks.findIndex(b=>b.id===id); return i<0?9999:i; }
+function applicantPos(id){ const i=State.applicants.findIndex(a=>a.id===id); return i<0?9999:i; }
 function applicantById(id){ return State.applicants.find(a=>a.id===id); }
 function ipoById(id){ return State.ipos.find(i=>i.id===id); }
 
@@ -1324,15 +1345,10 @@ function renderApplications(main){
 
     main.innerHTML = `
       <h1 class="page-title">Applications</h1>
-      <p class="page-sub">Tap an IPO to see banks, then applicants</p>
-      ${apps.length===0 ? `<div class="empty-state">${ICONS.list}<div class="t">No applications yet</div><div class="s">Mark some applications from Apply / Manage.</div></div>` : `
-        <div class="row" style="margin-bottom:4px;">
+            ${apps.length===0 ? `<div class="empty-state">${ICONS.list}<div class="t">No applications yet</div><div class="s">Mark some applications from Apply / Manage.</div></div>` : `
+        <div class="row" style="margin-bottom:8px;">
           <div style="font-size:12.5px;color:var(--ink-faint);">${apps.filter(isPending).length} pending</div>
-          <div style="font-size:13px;font-weight:600;" class="tabular">Currently blocked: ${fmtMoney(blocked)}</div>
-        </div>
-        <div class="row" style="margin-bottom:10px;">
-          <div style="font-size:11px;color:var(--ink-faint);">${apps.length} application${apps.length!==1?'s':''} total</div>
-          <div style="font-size:11px;color:var(--ink-faint);" class="tabular">Lifetime applied: ${fmtMoney(sum(apps))}</div>
+          <div style="font-size:13px;font-weight:600;" class="tabular">Blocked ${fmtMoney(blocked)}</div>
         </div>
         ${active.length ? `<div class="card" style="padding:6px 12px;">${active.map(card).join('')}</div>` : `<div class="empty-state"><div class="t">No pending applications</div></div>`}
         ${past.length ? `
@@ -1342,7 +1358,7 @@ function renderApplications(main){
           </details>` : ''}
       `}
     `;
-    main.querySelectorAll('[data-ipo]').forEach(el=>el.addEventListener('click',()=>{ nav.ipoId=el.dataset.ipo; nav.bankId=null; render(); }));
+    main.querySelectorAll('[data-ipo]').forEach(el=>el.addEventListener('click',()=>{ nav.ipoId=el.dataset.ipo; nav.bankId=null; go(); }));
   }
 
   // ---------- Level 2: banks within an IPO ----------
@@ -1351,7 +1367,7 @@ function renderApplications(main){
     const list = apps.filter(a=>a.ipoId===nav.ipoId);
     const groups = {};
     list.forEach(a=>{ (groups[a.bankId] = groups[a.bankId] || []).push(a); });
-    const cards = Object.keys(groups).map(bid=>{
+    const cards = Object.keys(groups).sort((x,y)=>bankPos(x)-bankPos(y)).map(bid=>{
       const bank = bankById(bid); const g = groups[bid]; const pend = g.filter(isPending);
       return `<div class="list-item" style="cursor:pointer;" data-bank="${bid}">
         <div class="main" style="flex:1;">
@@ -1367,14 +1383,14 @@ function renderApplications(main){
       <p class="page-sub">${list.length} application${list.length!==1?'s':''} · ${fmtMoney(sum(list))} · pick a bank</p>
       <div class="card" style="padding:6px 12px;">${cards}</div>
     `;
-    document.getElementById('app-back').addEventListener('click',()=>{ nav.ipoId=null; nav.bankId=null; render(); });
-    main.querySelectorAll('[data-bank]').forEach(el=>el.addEventListener('click',()=>{ nav.bankId=el.dataset.bank; render(); }));
+    document.getElementById('app-back').addEventListener('click',()=>{ nav.ipoId=null; nav.bankId=null; go(); });
+    main.querySelectorAll('[data-bank]').forEach(el=>el.addEventListener('click',()=>{ nav.bankId=el.dataset.bank; go(); }));
   }
 
   // ---------- Level 3: applicants within a bank ----------
   function viewApplicants(){
     const ipo = ipoById(nav.ipoId); const bank = bankById(nav.bankId);
-    const list = apps.filter(a=>a.ipoId===nav.ipoId && a.bankId===nav.bankId);
+    const list = apps.filter(a=>a.ipoId===nav.ipoId && a.bankId===nav.bankId).sort((x,y)=>(isPending(y)-isPending(x))||applicantPos(x.applicantId)-applicantPos(y.applicantId));
     const pend = list.filter(isPending);
     main.innerHTML = `
       ${backBar(ipo?ipo.name:'Back','app-back')}
@@ -1382,7 +1398,7 @@ function renderApplications(main){
       <p class="page-sub">${esc(ipo?ipo.name:'')} · ${list.length} applicant${list.length!==1?'s':''} · ${pend.length} pending · ${fmtMoney(sum(list))}</p>
       <div class="card" style="padding:6px 12px;">${list.map(row).join('')}</div>
     `;
-    document.getElementById('app-back').addEventListener('click',()=>{ nav.bankId=null; render(); });
+    document.getElementById('app-back').addEventListener('click',()=>{ nav.bankId=null; go(); });
     main.querySelectorAll('[data-open-ipo]').forEach(el=>el.addEventListener('click',()=>openAllotmentModal(el.dataset.openIpo)));
     main.querySelectorAll('[data-unapply]').forEach(el=>el.addEventListener('click',()=>confirmUnapply(el.dataset.unapply)));
   }
@@ -1391,8 +1407,8 @@ function renderApplications(main){
     if(!nav.ipoId) viewIpos();
     else if(!nav.bankId) viewBanks();
     else viewApplicants();
-    window.scrollTo(0,0);
   }
+  const go = ()=>{ render(); window.scrollTo(0,0); };
   render();
 }
 function confirmUnapply(appId){
@@ -2345,77 +2361,106 @@ function openGmpHistoryModal(ipo){
 }
 function openAllotmentModal(ipoId){
   const ipo = ipoById(ipoId);
-  const apps = ipoApplications(ipoId);
-  openModal(`
-    <div class="modal" style="max-width:520px;">
-      <h3>${esc(ipo.name)} — allotment</h3>
-      ${ipo.registrarUrl ? `<a class="link" href="${esc(ipo.registrarUrl)}" target="_blank" rel="noopener" style="font-size:13px;display:inline-flex;align-items:center;gap:6px;margin-bottom:14px;">${ICONS.external} Check allotment on registrar site</a>` : ''}
-      ${apps.length===0 ? `<div class="empty-state"><div class="t">No applications for this IPO</div></div>` : `
-      <div style="display:flex;flex-direction:column;gap:10px;">
-        ${apps.map(a=>{
-          const applicant = applicantById(a.applicantId); const bank = bankById(a.bankId);
-          const pan = applicant?.pan;
-          return `<div class="card" data-app-row="${a.id}">
-            <div class="row"><div style="font-weight:600;font-size:13.5px;">${esc(applicant?applicant.name:'—')}</div><div class="meta">${esc(bank?bank.name:'—')}</div></div>
-            <div class="meta tabular" style="margin:4px 0 10px;">Applied ${a.lots?a.lots+' lot'+(a.lots>1?'s':'')+' · ':''}${fmtMoney(a.amount)}</div>
-            ${a.allotmentStatus==='pending' ? `
-              <button class="btn sm ghost" data-check-allotment="${a.id}" style="margin-bottom:8px;">
-                ${ICONS.external} Check allotment${pan?' (copies PAN)':''}
-              </button>
-            ` : ''}
-            <div style="display:flex;gap:6px;flex-wrap:wrap;">
-              <button class="btn sm ${a.allotmentStatus==='not_allotted'?'primary':'ghost'}" data-set-status="${a.id}" data-status="not_allotted">Not allotted</button>
-              <button class="btn sm ${a.allotmentStatus==='allotted'?'primary':'ghost'}" data-set-status="${a.id}" data-status="allotted">Allotted</button>
-            </div>
-            ${a.allotmentStatus!=='pending' ? `<div class="meta tabular" style="margin-top:8px;">${a.allotmentStatus==='not_allotted'?`Refunded (unblocked): <b>${fmtMoney(a.refundedAmount||0)}</b>`:`Allotted amount: <b>${fmtMoney(a.allottedAmount||0)}</b> · nothing to refund`}</div>` : ''}
-          </div>`;
-        }).join('')}
-      </div>`}
-      <div class="modal-actions"><button class="btn ghost" data-close="1" style="flex:1;">Close</button></div>
-    </div>
-  `);
-  document.querySelectorAll('[data-check-allotment]').forEach(btn=>btn.addEventListener('click', async ()=>{
-    const appId = btn.dataset.checkAllotment;
-    const app = State.applications.find(x=>x.id===appId);
-    const applicant = applicantById(app.applicantId);
-    const pan = applicant?.pan;
-    const knownUrl = ipo.registrarUrl || REGISTRAR_FALLBACK_URLS[ipo.registrar];
-    if(!knownUrl){
-      // Registrar genuinely unknown for this IPO — the live data feed does
-      // not provide registrar info at all, so guessing one (e.g. always
-      // defaulting to KFin) risks sending the user to the WRONG registrar's
-      // site, which previously happened silently. Ask instead of guessing.
-      openRegistrarUnknownModal(ipo, pan);
-      return;
-    }
-    if(pan){
-      try{ await navigator.clipboard.writeText(pan); toast(`PAN copied — paste it on the registrar page`); }
-      catch(e){ toast(`Opening registrar site — PAN: ${pan}`); }
-    } else {
-      toast('No PAN saved for this applicant — add one in Applicants for faster checks');
-    }
-    window.open(knownUrl, '_blank', 'noopener');
-  }));
-  document.querySelectorAll('[data-set-status]').forEach(btn=>btn.addEventListener('click', async ()=>{
-    const appId = btn.dataset.setStatus; const status = btn.dataset.status;
-    const app = State.applications.find(x=>x.id===appId);
-    app.allotmentStatus = status;
-    if(status==='not_allotted'){
-      // Not allotted: the full applied amount is unblocked/refunded automatically.
-      app.allottedAmount = 0;
-      app.refundedAmount = app.amount||0;
-      app.refundDate = app.refundDate || todayStr();
-    }
-    if(status==='allotted'){
-      // Allotted: the applied amount converted to shares — nothing left to refund.
-      app.allottedAmount = app.amount||0;
-      app.refundedAmount = 0;
-      app.refundDate = null;
-    }
-    await idbPut('applications', app);
-    openAllotmentModal(ipoId); // re-render modal
-    render();
-  }));
+  const nm = (a)=>((applicantById(a.applicantId)||{}).name||'');
+  const bn = (a)=>((bankById(a.bankId)||{}).name||'');
+  let doneOpen = false;
+
+  const pendingRow = (a)=>{
+    const applicant = applicantById(a.applicantId);
+    return `<div class="al-row">
+      <div class="al-main">
+        <div class="al-name">${esc(applicant?applicant.name:'—')}</div>
+        <div class="al-meta tabular">${a.lots?a.lots+' lot'+(a.lots>1?'s':'')+' · ':''}${fmtMoney(a.amount)}</div>
+      </div>
+      <button class="btn sm ghost al-icon" data-check-allotment="${a.id}" title="Check allotment${applicant&&applicant.pan?' (copies PAN)':''}">${ICONS.external}</button>
+      <button class="btn sm ghost" data-set-status="${a.id}" data-status="not_allotted">Not allotted</button>
+      <button class="btn sm primary" data-set-status="${a.id}" data-status="allotted">Allotted</button>
+    </div>`;
+  };
+  const doneRow = (a)=>{
+    const ok = a.allotmentStatus==='allotted';
+    return `<div class="al-row">
+      <div class="al-main">
+        <div class="al-name">${esc(nm(a))} <span style="font-weight:500;color:var(--ink-faint);font-size:11.5px;">· ${esc(bn(a))}</span></div>
+        <div class="al-meta tabular">${ok?'Allotted · '+fmtMoney(a.allottedAmount||0):'Not allotted · refunded '+fmtMoney(a.refundedAmount||0)}</div>
+      </div>
+      <button class="btn sm ghost" data-set-status="${a.id}" data-status="pending">Undo</button>
+    </div>`;
+  };
+
+  function body(){
+    const apps = ipoApplications(ipoId).slice().sort((x,y)=>bankPos(x.bankId)-bankPos(y.bankId)||applicantPos(x.applicantId)-applicantPos(y.applicantId));
+    const pend = apps.filter(a=>a.allotmentStatus==='pending');
+    const done = apps.filter(a=>a.allotmentStatus!=='pending');
+    const byBank = {};
+    pend.forEach(a=>{ (byBank[a.bankId]=byBank[a.bankId]||[]).push(a); });
+    const refunded = done.filter(a=>a.allotmentStatus==='not_allotted').reduce((t,a)=>t+(a.refundedAmount||0),0);
+    return `
+      <div class="row" style="margin-bottom:2px;">
+        <h3 style="margin:0;">${esc(ipo.name)}</h3>
+        <button class="iconbtn" data-close="1" title="Close">✕</button>
+      </div>
+      <div class="row" style="margin-bottom:10px;">
+        <div class="meta" style="font-size:12px;color:var(--ink-faint);">${pend.length} pending${done.length?` · ${done.length} done`:''}</div>
+        ${ipo.registrarUrl ? `<a class="link" href="${esc(ipo.registrarUrl)}" target="_blank" rel="noopener" style="font-size:12px;display:inline-flex;align-items:center;gap:5px;">${ICONS.external} Registrar site</a>` : ''}
+      </div>
+      ${apps.length===0 ? `<div class="empty-state"><div class="t">No applications for this IPO</div></div>` : ''}
+      ${apps.length>0 && pend.length===0 ? `<div class="meta" style="text-align:center;padding:18px 0;color:var(--ink-faint);font-size:13px;">All results marked ✓</div>` : ''}
+      ${Object.keys(byBank).sort((x,y)=>bankPos(x)-bankPos(y)).map(bid=>`
+        <div class="al-bank">${esc((bankById(bid)||{}).name||'—')}</div>
+        ${byBank[bid].map(pendingRow).join('')}
+      `).join('')}
+      ${done.length ? `
+        <details class="al-done" ${doneOpen?'open':''}>
+          <summary>Done (${done.length})${refunded?` · ${fmtMoney(refunded)} refunded`:''}</summary>
+          ${done.map(doneRow).join('')}
+        </details>` : ''}
+    `;
+  }
+
+  openModal(`<div class="modal" id="allot-modal" style="max-width:520px;"></div>`);
+  const el = document.getElementById('allot-modal');
+
+  function paint(){
+    const top = el.scrollTop;                 // keep the user's place in the list
+    el.innerHTML = body();
+    el.scrollTop = top;
+    const det = el.querySelector('.al-done');
+    if(det) det.addEventListener('toggle', ()=>{ doneOpen = det.open; });
+    el.querySelectorAll('[data-close]').forEach(b=>b.addEventListener('click', closeModal));
+
+    el.querySelectorAll('[data-check-allotment]').forEach(btn=>btn.addEventListener('click', async ()=>{
+      const app = State.applications.find(x=>x.id===btn.dataset.checkAllotment);
+      const applicant = applicantById(app.applicantId);
+      const pan = applicant?.pan;
+      const knownUrl = ipo.registrarUrl || REGISTRAR_FALLBACK_URLS[ipo.registrar];
+      if(!knownUrl){ openRegistrarUnknownModal(ipo, pan); return; }
+      if(pan){
+        try{ await navigator.clipboard.writeText(pan); toast('PAN copied — paste it on the registrar page'); }
+        catch(e){ toast(`Opening registrar site — PAN: ${pan}`); }
+      } else {
+        toast('No PAN saved for this applicant — add one in Applicants for faster checks');
+      }
+      window.open(knownUrl, '_blank', 'noopener');
+    }));
+
+    el.querySelectorAll('[data-set-status]').forEach(btn=>btn.addEventListener('click', async ()=>{
+      const app = State.applications.find(x=>x.id===btn.dataset.setStatus);
+      const status = btn.dataset.status;
+      app.allotmentStatus = status;
+      if(status==='not_allotted'){
+        app.allottedAmount = 0; app.refundedAmount = app.amount||0; app.refundDate = app.refundDate || todayStr();
+      } else if(status==='allotted'){
+        app.allottedAmount = app.amount||0; app.refundedAmount = 0; app.refundDate = null;
+      } else {                                  // undo -> back to pending
+        app.allottedAmount = 0; app.refundedAmount = 0; app.refundDate = null;
+      }
+      await idbPut('applications', app);
+      paint();      // redraw only the modal body: no animation, scroll position kept
+      render();     // refresh the page behind it
+    }));
+  }
+  paint();
 }
 
 /* ==================== SETTINGS ==================== */
