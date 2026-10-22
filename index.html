@@ -640,6 +640,12 @@ function setupAuthListener(){
 function bankById(id){ return State.banks.find(b=>b.id===id); }
 function bankPos(id){ const i=State.banks.findIndex(b=>b.id===id); return i<0?9999:i; }
 function applicantPos(id){ const i=State.applicants.findIndex(a=>a.id===id); return i<0?9999:i; }
+function allotmentId(applicant){
+  if(!applicant) return null;
+  if(applicant.pan) return { value:applicant.pan, label:'PAN' };
+  if(applicant.boid) return { value:applicant.boid, label:'BO ID' };
+  return null;
+}
 function applicantById(id){ return State.applicants.find(a=>a.id===id); }
 function ipoById(id){ return State.ipos.find(i=>i.id===id); }
 
@@ -1569,7 +1575,7 @@ function renderApplicants(main){
           return `<div class="list-item">
             <div class="main" style="cursor:pointer;flex:1;" data-view-applicant="${a.id}">
               <div class="title">${esc(a.name)}</div>
-              <div class="meta">${apps.length} application${apps.length!==1?'s':''}</div>
+              <div class="meta">${apps.length} application${apps.length!==1?'s':''} · ${a.pan&&a.boid?'PAN + BO ID':a.pan?'PAN':a.boid?'BO ID':'<span style="color:var(--rust);">no ID saved</span>'}</div>
             </div>
             <div class="actions">
               <button class="iconbtn" data-edit-applicant="${a.id}">${ICONS.edit}</button>
@@ -1597,7 +1603,10 @@ function openApplicantModal(applicant){
       <label class="field" style="margin-top:12px;">PAN (optional)
         <input type="text" id="applicant-pan" value="${applicant?esc(applicant.pan||''):''}" placeholder="e.g. ABCDE1234F" maxlength="10" style="text-transform:uppercase;">
       </label>
-      <p style="font-size:11.5px;color:var(--ink-faint);margin:6px 0 0;">Stored only on this device — used to speed up checking allotment status on registrar sites. Never sent anywhere by this app.</p>
+      <label class="field" style="margin-top:12px;">BO ID / Demat ID (optional)
+        <input type="text" id="applicant-boid" value="${applicant?esc(applicant.boid||''):''}" placeholder="16 characters, e.g. 1208160012345678" maxlength="16" inputmode="text" autocapitalize="characters" style="text-transform:uppercase;">
+      </label>
+      <p style="font-size:11.5px;color:var(--ink-faint);margin:6px 0 0;">Use PAN, BO ID, or both. If there is no PAN, the allotment check copies the BO ID instead. Registrar sites accept either. Synced to your account only if you are signed in.</p>
       <div class="modal-actions">
         <button class="btn ghost" data-close="1">Cancel</button>
         <button class="btn primary" id="save-applicant">Save</button>
@@ -1611,6 +1620,7 @@ function openApplicantModal(applicant){
     const obj = applicant || { id: uid() };
     obj.name = name;
     obj.pan = pan;
+    obj.boid = document.getElementById('applicant-boid').value.replace(/\s+/g,'').toUpperCase();
     await idbPut('applicants', obj);
     if(!isEdit) State.applicants.push(obj);
     closeModal(); toast(isEdit?'Applicant updated':'Applicant added'); render();
@@ -2311,7 +2321,7 @@ const REGISTRAR_FALLBACK_URLS = {
   'Skyline Financial Services': 'https://www.skylinerta.com/ipo.php',
   'Maashitla Securities': 'https://maashitla.com/allotment-status/public-issues',
 };
-function openRegistrarUnknownModal(ipo, pan){
+function openRegistrarUnknownModal(ipo, idObj){
   const names = Object.keys(REGISTRAR_FALLBACK_URLS).filter(k=>
     !['KFintech','MUFG Intime','Bigshare'].includes(k) // skip the duplicate/alias entries in the picker list
   );
@@ -2331,8 +2341,8 @@ function openRegistrarUnknownModal(ipo, pan){
     ipo.registrar = name;
     await idbPut('ipos', ipo);
     closeModal();
-    if(pan){
-      try{ await navigator.clipboard.writeText(pan); toast(`Saved — PAN copied, opening ${name}`); }
+    if(idObj){
+      try{ await navigator.clipboard.writeText(idObj.value); toast(`Saved — ${idObj.label} copied, opening ${name}`); }
       catch(e){ toast(`Saved — opening ${name}`); }
     } else {
       toast(`Saved — opening ${name}`);
@@ -2394,7 +2404,7 @@ function openAllotmentModal(ipoId){
         <div class="al-name">${esc(applicant?applicant.name:'—')}</div>
         <div class="al-meta tabular">${a.lots?a.lots+' lot'+(a.lots>1?'s':'')+' · ':''}${fmtMoney(a.amount)}</div>
       </div>
-      <button class="btn sm ghost al-icon" data-check-allotment="${a.id}" title="Check allotment${applicant&&applicant.pan?' (copies PAN)':''}">${ICONS.external}</button>
+      <button class="btn sm ghost al-icon" data-check-allotment="${a.id}" title="Check allotment${allotmentId(applicant)?' (copies '+allotmentId(applicant).label+')':''}">${ICONS.external}</button>
       <button class="btn sm ghost" data-set-status="${a.id}" data-status="not_allotted">Not allotted</button>
       <button class="btn sm primary" data-set-status="${a.id}" data-status="allotted">Allotted</button>
     </div>`;
@@ -2454,14 +2464,14 @@ function openAllotmentModal(ipoId){
     el.querySelectorAll('[data-check-allotment]').forEach(btn=>btn.addEventListener('click', async ()=>{
       const app = State.applications.find(x=>x.id===btn.dataset.checkAllotment);
       const applicant = applicantById(app.applicantId);
-      const pan = applicant?.pan;
+      const idObj = allotmentId(applicant);
       const knownUrl = ipo.registrarUrl || REGISTRAR_FALLBACK_URLS[ipo.registrar];
-      if(!knownUrl){ openRegistrarUnknownModal(ipo, pan); return; }
-      if(pan){
-        try{ await navigator.clipboard.writeText(pan); toast('PAN copied — paste it on the registrar page'); }
-        catch(e){ toast(`Opening registrar site — PAN: ${pan}`); }
+      if(!knownUrl){ openRegistrarUnknownModal(ipo, idObj); return; }
+      if(idObj){
+        try{ await navigator.clipboard.writeText(idObj.value); toast(`${idObj.label} copied — paste it on the registrar page`); }
+        catch(e){ toast(`Opening registrar site — ${idObj.label}: ${idObj.value}`); }
       } else {
-        toast('No PAN saved for this applicant — add one in Applicants for faster checks');
+        toast('No PAN or BO ID saved for this applicant — add one in Applicants');
       }
       window.open(knownUrl, '_blank', 'noopener');
     }));
