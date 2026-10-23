@@ -316,6 +316,8 @@ a.link:hover{ text-decoration:underline; }
 .modal{ padding:16px 16px 18px; }
 .modal-actions{ margin-top:12px; }
 @media (max-width:760px){ main{ padding:12px 12px 84px; } .page-title{ font-size:18px; } }
+.ipo-search{ width:100%; box-sizing:border-box; margin:0 0 10px; padding:9px 12px; border-radius:10px; border:1px solid var(--line); background:var(--card); color:var(--ink); font-family:inherit; font-size:13.5px; outline:none; }
+.ipo-search:focus{ border-color:var(--seal); }
 </style>
 </head>
 <body>
@@ -1786,16 +1788,47 @@ function renderIpos(main){
       <button data-tab="active" class="${tab==='active'?'active':''}">Active & upcoming</button>
       <button data-tab="all" class="${tab==='all'?'active':''}">All</button>
     </div>
+    <input type="search" id="ipo-search" class="ipo-search" placeholder="Search IPOs" value="${esc(State._ipoQuery||'')}" autocomplete="off">
     <div id="ipo-list"></div>
   `;
   document.getElementById('add-ipo').addEventListener('click',()=>openIpoModal(null));
   document.getElementById('sync-ipos-btn').addEventListener('click', ()=>syncLiveIpos(false));
   main.querySelectorAll('[data-tab]').forEach(b=>b.addEventListener('click',()=>{ State._ipoTab=b.dataset.tab; renderIpos(main); }));
   main.querySelectorAll('[data-type-tab]').forEach(b=>b.addEventListener('click',()=>{ State._ipoTypeTab=b.dataset.typeTab; renderIpos(main); }));
-  let list = State.ipos.filter(i=> (i.ipoType||'mainboard')===typeTab );
-  if(tab==='active') list = list.filter(i=>ipoStatus(i).key!=='listed' && ipoStatus(i).key!=='closed');
-  list.sort((a,b)=>(a.openDate||'').localeCompare(b.openDate||''));
   const listEl = document.getElementById('ipo-list');
+  function drawList(){
+  const q = (State._ipoQuery||'').trim().toLowerCase();
+  let list = State.ipos.filter(i=> (i.ipoType||'mainboard')===typeTab );
+  let hiddenOld = 0;
+  if(q){
+    list = list.filter(i=>(i.name||'').toLowerCase().includes(q));      // search looks through every IPO, old ones included
+  } else if(tab==='active'){
+    list = list.filter(i=>ipoStatus(i).key!=='listed' && ipoStatus(i).key!=='closed');
+  } else {
+    // "All": only IPOs that closed within the last 7 days (or are still open/upcoming),
+    // plus any with an allotment still pending. Older ones stay one tap away.
+    const d = new Date(); d.setDate(d.getDate()-7);
+    const cutoff = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+    const keep = (i)=> !i.closeDate || i.closeDate>=cutoff || ipoApplications(i.id).some(a=>a.allotmentStatus==='pending');
+    const kept = list.filter(keep);
+    hiddenOld = list.length - kept.length;
+    if(!State._ipoShowOlder) list = kept;
+  }
+  // Order: open now (closing soonest first) -> upcoming (opening soonest first) -> closed (most recently closed first)
+  const t0 = new Date(); const tod = t0.getFullYear()+'-'+String(t0.getMonth()+1).padStart(2,'0')+'-'+String(t0.getDate()).padStart(2,'0');
+  const rank = (i)=>{
+    if(i.openDate && i.openDate>tod) return 1;                       // upcoming
+    if(i.closeDate && i.closeDate>=tod) return 0;                    // open now (includes closing today)
+    if(i.closeDate) return 2;                                        // closed
+    return i.openDate ? 0 : 3;                                       // no close date: treat as open if it has opened; else last
+  };
+  list.sort((a,b)=>{
+    const ra=rank(a), rb=rank(b);
+    if(ra!==rb) return ra-rb;
+    if(ra===0) return (a.closeDate||'9999').localeCompare(b.closeDate||'9999');
+    if(ra===1) return (a.openDate||'').localeCompare(b.openDate||'');
+    return (b.closeDate||'').localeCompare(a.closeDate||'') || (b.openDate||'').localeCompare(a.openDate||'');
+  });
   listEl.innerHTML = list.length===0 ? `<div class="empty-state">${ICONS.ipo}<div class="t">No ${typeTab==='sme'?'SME':'Mainboard'} IPOs here</div><div class="s">Add one, or switch tabs / sync live IPOs.</div></div>` : `
     <div class="card" style="padding:6px 12px;">
       ${list.map(ipo=>{
@@ -1814,10 +1847,16 @@ function renderIpos(main){
         </div>`;
       }).join('')}
     </div>
+    ${(tab==='all' && !q && (hiddenOld>0 || State._ipoShowOlder)) ? `<button class="btn ghost" id="toggle-older" style="width:100%;margin-top:10px;">${State._ipoShowOlder?'Hide older IPOs':'Show '+hiddenOld+' older IPO'+(hiddenOld!==1?'s':'')}</button>` : ''}
   `;
+  const tg = document.getElementById('toggle-older');
+  if(tg) tg.addEventListener('click',()=>{ State._ipoShowOlder = !State._ipoShowOlder; drawList(); });
   listEl.querySelectorAll('[data-edit-ipo]').forEach(el=>el.addEventListener('click',()=>openIpoModal(ipoById(el.dataset.editIpo))));
   listEl.querySelectorAll('[data-del-ipo]').forEach(el=>el.addEventListener('click',()=>confirmDeleteIpo(el.dataset.delIpo)));
   listEl.querySelectorAll('[data-view-ipo]').forEach(el=>el.addEventListener('click',()=>{ go('apply'); State.applyFlow={ipoId:el.dataset.viewIpo, bankId:null, selected:new Map()}; render(); }));
+  }
+  drawList();
+  document.getElementById('ipo-search').addEventListener('input', (e)=>{ State._ipoQuery = e.target.value; drawList(); });
 }
 function openIpoModal(ipo, prefillName){
   const isEdit = !!ipo;
