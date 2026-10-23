@@ -318,6 +318,22 @@ a.link:hover{ text-decoration:underline; }
 @media (max-width:760px){ main{ padding:12px 12px 84px; } .page-title{ font-size:18px; } }
 .ipo-search{ width:100%; box-sizing:border-box; margin:0 0 10px; padding:9px 12px; border-radius:10px; border:1px solid var(--line); background:var(--card); color:var(--ink); font-family:inherit; font-size:13.5px; outline:none; }
 .ipo-search:focus{ border-color:var(--seal); }
+
+/* --- v8: today strip, chips, swipe, profit --- */
+.grp-label{ font-size:10.5px; letter-spacing:.7px; color:var(--ink-faint); margin:0 0 4px; font-weight:700; }
+.attn-go{ margin-left:auto; font-size:12px; font-weight:700; color:var(--seal); white-space:nowrap; }
+.attn-row{ cursor:pointer; }
+.chips-row{ display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin:10px 0 2px; }
+.chips-label{ font-size:11px; color:var(--ink-faint); margin-right:2px; text-transform:uppercase; letter-spacing:.5px; }
+.chip{ font-size:12px; padding:4px 9px; border:1px solid var(--line); border-radius:999px; color:var(--ink-dim); }
+.gmpchip{ font-size:11.5px; font-weight:650; }
+.gmptag{ font-size:10.5px; font-weight:800; letter-spacing:.4px; text-transform:uppercase; border:1px solid; border-radius:6px; padding:1px 6px; }
+.al-row[data-swipe]{ touch-action:pan-y; border-radius:8px; }
+.pf-ipo{ border-bottom:1px solid var(--line); }
+.pf-ipo:last-child{ border-bottom:none; }
+.pf-ipo summary{ display:flex; align-items:center; gap:8px; padding:9px 0; cursor:pointer; list-style:none; }
+.pf-ipo summary::-webkit-details-marker{ display:none; }
+.pf-row{ display:flex; justify-content:space-between; font-size:12.5px; padding:5px 0 5px 10px; color:var(--ink-dim); }
 </style>
 </head>
 <body>
@@ -642,6 +658,31 @@ function setupAuthListener(){
 function bankById(id){ return State.banks.find(b=>b.id===id); }
 function bankPos(id){ const i=State.banks.findIndex(b=>b.id===id); return i<0?9999:i; }
 function applicantPos(id){ const i=State.applicants.findIndex(a=>a.id===id); return i<0?9999:i; }
+
+/* ---- GMP rule + trend + last-apply memory ---- */
+function lsGet(k,def){ try{ const v=localStorage.getItem(k); return v==null?def:JSON.parse(v); }catch(e){ return def; } }
+function lsSet(k,v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} }
+function gmpRule(){ const r=lsGet('ipoledger_gmprule',{}); return { apply: Number(r.apply)||15, skip: (r.skip===0||r.skip)?Number(r.skip):5 }; }
+function gmpTag(ipo){                       // Apply / Maybe / Skip — only for IPOs you can still apply to
+  const k = ipoStatus(ipo).key;
+  if(k!=='open' && k!=='closing' && k!=='upcoming') return '';
+  if(ipo.gmpPercent==null || ipo.gmpPercent==='') return '';
+  const g = Number(ipo.gmpPercent), r = gmpRule();
+  const [t,c] = g>=r.apply ? ['Apply','var(--green)'] : g>=r.skip ? ['Maybe','var(--gold)'] : ['Skip','var(--rust)'];
+  return `<span class="gmptag" style="color:${c};border-color:${c};">${t}</span>`;
+}
+function gmpTrend(ipo){                     // GMP % now, and change vs the previous day's reading
+  if(ipo.gmpPercent==null || ipo.gmpPercent==='') return '';
+  const h = (ipo.gmpHistory||[]).slice().sort((a,b)=>(a.date||'').localeCompare(b.date||''));
+  const now = Number(ipo.gmpPercent);
+  let prev = null;
+  for(let i=h.length-1;i>=0;i--){ if(h[i].gmpPercent!=null && h[i].date < todayStr()){ prev = Number(h[i].gmpPercent); break; } }
+  const d = prev==null ? null : now-prev;
+  const col = now>0?'var(--green)':now<0?'var(--rust)':'var(--ink-faint)';
+  const arrow = d==null||Math.abs(d)<0.05 ? '' : d>0 ? `<span style="color:var(--green)"> ▲${d.toFixed(0)}</span>` : `<span style="color:var(--rust)"> ▼${Math.abs(d).toFixed(0)}</span>`;
+  return `<span class="gmpchip tabular" style="color:${col};">GMP ${now>0?'+':''}${now}%${arrow}</span>`;
+}
+function daysSince(){ return 0; }
 function allotmentId(applicant){
   if(!applicant) return null;
   if(applicant.pan) return { value:applicant.pan, label:'PAN' };
@@ -960,11 +1001,12 @@ function renderDashboard(main){
   const attn = [];
   State.ipos.forEach(ipo=>{
     const st = ipoStatus(ipo);
-    const openD = daysDiff(ipo.openDate), closeD = daysDiff(ipo.closeDate), allotD = daysDiff(ipo.allotmentDate), listD = daysDiff(ipo.listingDate);
+    const openD = daysDiff(ipo.openDate), closeD = daysDiff(ipo.closeDate), allotD = daysDiff(ipo.allotmentDate||ipo.allotmentDateTentative), listD = daysDiff(ipo.listingDate||ipo.listingDateTentative);
     const gmpTag = ipo.gmpPercent!=null ? ` · GMP ${Number(ipo.gmpPercent)>0?'+':''}${ipo.gmpPercent}%` : '';
     if(closeD===0) attn.push({dot:'rust', text:`${ipo.name} — Closing today${gmpTag}`, ipo});
     else if(closeD===1) attn.push({dot:'gold', text:`${ipo.name} — Closing tomorrow${gmpTag}`, ipo});
-    if(allotD===0) attn.push({dot:'gold', text:`${ipo.name} — Check allotment if available`, ipo});
+    const pendApps = ipoApplications(ipo.id).filter(a=>a.allotmentStatus==='pending');
+    if(pendApps.length && allotD!==null && allotD<=0) attn.push({dot:'gold', text:`${ipo.name} — ${pendApps.length} result${pendApps.length>1?'s':''} to check`, ipo, action:'allot', group:'today'});
     else if(allotD===1) attn.push({dot:'gold', text:`${ipo.name} — Allotment tomorrow`, ipo});
     if(listD===0) attn.push({dot:'blue', text:`${ipo.name} — Listing today`, ipo});
     else if(listD===1) attn.push({dot:'blue', text:`${ipo.name} — Listing tomorrow`, ipo});
@@ -974,15 +1016,32 @@ function renderDashboard(main){
     if(pending>0 && st.key==='listed') attn.push({dot:'gold', text:`${ipo.name} — Refund pending (${fmtMoney(pending)})`, ipo});
   });
 
-  const todayItems = attn.filter(a=>a.text.includes('today'));
-  const tmrItems = attn.filter(a=>a.text.includes('tomorrow'));
-  const otherItems = attn.filter(a=>!a.text.includes('today') && !a.text.includes('tomorrow'));
+  const grp = (a)=> a.group || (a.text.includes('today')?'today':a.text.includes('tomorrow')?'tomorrow':'other');
+  attn.sort((x,y)=>((y.action==='allot')-(x.action==='allot')));            // results to check float to the top
+  const todayItems = attn.filter(a=>grp(a)==='today');
+  const tmrItems = attn.filter(a=>grp(a)==='tomorrow');
+  const otherItems = attn.filter(a=>grp(a)==='other');
 
+  const bankBlock = State.banks.map(b=>({name:b.name, v:bankBlocked(b.id)})).filter(x=>x.v>0);
+  const blockedChips = bankBlock.length ? `<div class="chips-row"><span class="chips-label">Blocked by bank</span>${bankBlock.map(x=>`<span class="chip tabular">${esc(x.name)} <b>${fmtMoney(x.v)}</b></span>`).join('')}</div>` : '';
   main.innerHTML = `
     <h1 class="page-title">Dashboard</h1>
-    <p class="page-sub">Your IPO money at a glance</p>
 
-    <div class="hero-stat ${profit>=0?'pos':'neg'}">
+    <div class="row" style="margin-bottom:8px;">
+      <div class="section-label" style="margin:0;">Today</div>
+      ${upcoming>0 ? `<div style="font-size:11.5px;color:var(--ink-faint);">${upcoming} upcoming</div>` : ''}
+    </div>
+    ${attn.length===0 ? `<div class="card" style="padding:12px 14px;font-size:13px;color:var(--ink-faint);">Nothing urgent today.</div>` : `
+      <div class="card" style="padding:10px 14px;">
+        ${todayItems.length? `<div class="grp-label">TODAY</div>` : ''}
+        ${todayItems.map(a=>attnRow(a)).join('')}
+        ${tmrItems.length? `<div class="grp-label" style="margin-top:${todayItems.length?'10px':'0'};">TOMORROW</div>` : ''}
+        ${tmrItems.map(a=>attnRow(a)).join('')}
+        ${otherItems.length? `<div class="grp-label" style="margin-top:${(todayItems.length||tmrItems.length)?'10px':'0'};">OTHER</div>` : ''}
+        ${otherItems.map(a=>attnRow(a)).join('')}
+      </div>`}
+
+    <div class="hero-stat ${profit>=0?'pos':'neg'}" style="margin-top:14px;">
       <div class="label">Total IPO profit</div>
       <div class="value tabular">${fmtMoney(profit)}</div>
     </div>
@@ -993,21 +1052,7 @@ function renderDashboard(main){
       <div class="stat"><div class="label">Active applications</div><div class="value tabular">${activeApps}</div></div>
     </div>
 
-    <div class="row" style="margin-top:22px;margin-bottom:10px;">
-      <div class="section-label" style="margin:0;">Needs attention</div>
-      ${upcoming>0 ? `<div style="font-size:11.5px;color:var(--ink-faint);">${upcoming} upcoming</div>` : ''}
-    </div>
-    ${attn.length===0 ? `<div class="empty-state"><div class="t">Nothing urgent</div><div class="s">Add IPOs to start tracking dates.</div></div>` : `
-      <div class="card">
-        ${todayItems.length? `<div style="font-size:11px;color:var(--ink-faint);margin-bottom:6px;">TODAY</div>` : ''}
-        ${todayItems.map(a=>attnRow(a)).join('')}
-        ${tmrItems.length? `<div style="font-size:11px;color:var(--ink-faint);margin:${todayItems.length?'14px':'0'} 0 6px;">TOMORROW</div>` : ''}
-        ${tmrItems.map(a=>attnRow(a)).join('')}
-        ${otherItems.length? `<div style="font-size:11px;color:var(--ink-faint);margin:${(todayItems.length||tmrItems.length)?'14px':'0'} 0 6px;">OTHER</div>` : ''}
-        ${otherItems.map(a=>attnRow(a)).join('')}
-      </div>
-    `}
-
+    ${blockedChips}
     <div class="section-label">Open now</div>
     ${renderIpoStrip(State.ipos.filter(i=>ipoStatus(i).key==='open'))}
   `;
@@ -1015,6 +1060,7 @@ function renderDashboard(main){
     State.applyFlow = {ipoId: el.dataset.gotoIpo, bankId:null, selected:new Map()};
     go('apply');
   }));
+  main.querySelectorAll('[data-allot-ipo]').forEach(el=>el.addEventListener('click',()=>openAllotmentModal(el.dataset.allotIpo)));
   const banksCard = document.getElementById('banks-overview-card');
   if(banksCard) banksCard.addEventListener('click', openBanksOverviewModal);
 }
@@ -1066,9 +1112,10 @@ function openBanksOverviewModal(){
 }
 function attnRow(a){
   const dotColor = {rust:'var(--rust)', gold:'var(--gold)', blue:'var(--blue)', green:'var(--green)'}[a.dot] || 'var(--ink-faint)';
-  return `<div class="row attn-row" data-goto-ipo="${a.ipo.id}">
+  return `<div class="row attn-row" ${a.action==='allot' ? `data-allot-ipo="${a.ipo.id}"` : `data-goto-ipo="${a.ipo.id}"`}>
     <span class="attn-dot" style="background:${dotColor};"></span>
     <span class="attn-text">${esc(a.text)}</span>
+    ${a.action==='allot' ? '<span class="attn-go">Open ›</span>' : ''}
   </div>`;
 }
 function renderIpoStrip(list){
@@ -1207,6 +1254,24 @@ function renderApply(main){
       flow.bankId = el.dataset.bank; flow.selected = new Map();
       renderApplyDetails();
     }));
+    // "Same as last time": last bank + applicants you applied with, minus anyone already applied to this IPO
+    const last = lsGet('ipoledger_lastapply', null);
+    if(last && flow.selected.size===0 && bankById(last.bankId)){
+      const already = new Set(State.applications.filter(a=>a.ipoId===ipo.id).map(a=>a.applicantId));
+      const minL = Math.max(1, Number(ipo.minLots)||1);
+      const who = (last.people||[]).filter(pp=>applicantById(pp.id) && !already.has(pp.id));
+      if(who.length){
+        const q = document.createElement('button');
+        q.className = 'btn ghost block'; q.style.cssText = 'margin-top:10px;justify-content:flex-start;text-align:left;';
+        q.innerHTML = `↻ Same as last time — ${esc(bankById(last.bankId).name)} · ${who.length} applicant${who.length>1?'s':''}`;
+        q.addEventListener('click',()=>{
+          flow.bankId = last.bankId;
+          flow.selected = new Map(who.map(pp=>[pp.id, Math.max(minL, Number(pp.lots)||1)]));
+          renderApplyDetails();
+        });
+        bankSlot.appendChild(q);
+      }
+    }
 
     if(!flow.bankId){ applicantSlot.innerHTML=''; return; }
 
@@ -1306,6 +1371,7 @@ async function markSelectedApplied(ipo, bank, lotAmt){
     await idbPut('applications', app);
     State.applications.push(app);
   }
+  lsSet('ipoledger_lastapply', { bankId: bank.id, people: entries.map(([id,lots])=>({id, lots})) });
   flow.selected = new Map();
   toast(`✅ ${entries.length} application${entries.length>1?'s':''} marked as applied — ${bank.name}, ${fmtMoney(totalAmount)}`);
   render();
@@ -1365,7 +1431,9 @@ function renderApplications(main){
           <div class="title">${esc(e.ipo?e.ipo.name:'Unknown IPO')}</div>
           <div class="meta tabular">${e.list.length} application${e.list.length!==1?'s':''} · ${banks} bank${banks!==1?'s':''} · ${fmtMoney(sum(e.list))}</div>
         </div>
-        <div style="font-size:11.5px;color:${pend.length?'var(--seal)':'var(--ink-faint)'};font-weight:600;">${pend.length?pend.length+' pending':'Done'}</div>
+        ${(pend.length && e.ipo && daysDiff(e.ipo.allotmentDate||e.ipo.allotmentDateTentative)!==null && daysDiff(e.ipo.allotmentDate||e.ipo.allotmentDateTentative)<=0)
+          ? `<button class="btn sm primary" data-results="${e.id}">Results · ${pend.length}</button>`
+          : `<div style="font-size:11.5px;color:${pend.length?'var(--seal)':'var(--ink-faint)'};font-weight:600;">${pend.length?pend.length+' pending':'Done'}</div>`}
       </div>`;
     };
 
@@ -1385,6 +1453,7 @@ function renderApplications(main){
       `}
     `;
     main.querySelectorAll('[data-ipo]').forEach(el=>el.addEventListener('click',()=>{ open(el.dataset.ipo, null); }));
+    main.querySelectorAll('[data-results]').forEach(el=>el.addEventListener('click',(ev)=>{ ev.stopPropagation(); openAllotmentModal(el.dataset.results); }));
   }
 
   // ---------- Level 2: banks within an IPO ----------
@@ -1837,6 +1906,7 @@ function renderIpos(main){
           <div class="main" style="cursor:pointer;flex:1;" data-view-ipo="${ipo.id}">
             <div class="title">${esc(ipo.name)}</div>
             <div class="meta">${fmtDate(ipo.openDate)}–${fmtDate(ipo.closeDate)} · ${ipoApplications(ipo.id).length} applications${ipo.registrar?' · '+esc(ipo.registrar):''}</div>
+            ${(gmpTrend(ipo)||gmpTag(ipo)) ? `<div style="margin-top:4px;display:flex;gap:6px;align-items:center;">${gmpTrend(ipo)}${gmpTag(ipo)}</div>` : ''}
           </div>
           ${ipo.dataComplete===false ? `<span class="badge closing" title="Price or lot size missing from the feed">Needs info</span>` : ''}
           <span class="badge ${st.key}">${st.label}</span>
@@ -2196,35 +2266,63 @@ function openTransferModal(){
 /* ==================== PROFIT ==================== */
 function renderProfit(main){
   const totalProfit = totalProfitAll();
+  const net = (x)=>(x.saleAmount||0)-(x.investment||0)-(x.charges||0);
+  const sales = State.sales.slice().sort((a,b)=>(b.saleDate||'').localeCompare(a.saleDate||''));
+
+  // by IPO
+  const byIpo = {};
+  sales.forEach(x=>{ const g=(byIpo[x.ipoId]=byIpo[x.ipoId]||{ipoId:x.ipoId,inv:0,sold:0,chg:0,n:0,rows:[],last:''}); g.inv+=x.investment||0; g.sold+=x.saleAmount||0; g.chg+=x.charges||0; g.n++; g.rows.push(x); if((x.saleDate||'')>g.last) g.last=x.saleDate||''; });
+  const ipoGroups = Object.values(byIpo).sort((a,b)=>b.last.localeCompare(a.last));
+
+  // by month (running total)
+  const byMonth = {};
+  sales.forEach(x=>{ const m=(x.saleDate||'').slice(0,7); if(m) byMonth[m]=(byMonth[m]||0)+net(x); });
+  const months = Object.keys(byMonth).sort().reverse().slice(0,6);
+  const monthName = (m)=>new Date(m+'-01T00:00:00').toLocaleDateString('en-IN',{month:'short',year:'2-digit'});
+  const thisMonth = byMonth[todayStr().slice(0,7)]||0;
+
+  // allotted but not sold yet
+  const soldIds = new Set(State.sales.map(x=>x.applicationId));
+  const unsold = State.applications.filter(a=>(a.allottedAmount||0)>0 && !soldIds.has(a.id));
+
   main.innerHTML = `
     <div class="row"><h1 class="page-title">Profit</h1>
-      <button class="btn primary" id="add-sale">${ICONS.plus} Record sale</button>
+      <button class="btn primary sm" id="add-sale">${ICONS.plus} Record sale</button>
     </div>
-    <p class="page-sub">Track realised profit after selling allotted shares</p>
-    <div class="stat" style="max-width:260px;">
-      <div class="label">Total IPO profit</div>
-      <div class="value ${totalProfit>=0?'pos':'neg'} tabular">${fmtMoney(totalProfit)}</div>
+    <div class="grid cols-2" style="margin:6px 0 4px;">
+      <div class="stat"><div class="label">Total profit</div><div class="value ${totalProfit>=0?'pos':'neg'} tabular">${fmtMoney(totalProfit)}</div></div>
+      <div class="stat"><div class="label">This month</div><div class="value ${thisMonth>=0?'pos':'neg'} tabular">${fmtMoney(thisMonth)}</div></div>
     </div>
-    <div class="section-label">Sales</div>
-    ${State.sales.length===0 ? `<div class="empty-state">${ICONS.profit}<div class="t">No sales recorded yet</div></div>` : `
-      <div class="card" style="padding:6px 12px;">
-        ${State.sales.slice().sort((a,b)=>(b.saleDate||'').localeCompare(a.saleDate||'')).map(s=>{
-          const ipo = ipoById(s.ipoId); const applicant = applicantById(s.applicantId);
-          const profit = (s.saleAmount||0)-(s.investment||0)-(s.charges||0);
-          return `<div class="list-item">
-            <div class="main">
-              <div class="title">${esc(ipo?ipo.name:'IPO')} · ${esc(applicant?applicant.name:'—')}</div>
-              <div class="meta">${fmtDate(s.saleDate)} · Invested ${fmtMoney(s.investment)} → Sold ${fmtMoney(s.saleAmount)}</div>
-            </div>
-            <div class="money ${profit>=0?'plus':'minus'} tabular">${profit>=0?'+':''}${fmtMoney(profit)}</div>
-          </div>`;
+    ${months.length ? `<div class="chips-row"><span class="chips-label">By month</span>${months.map(m=>`<span class="chip tabular">${monthName(m)} <b style="color:${byMonth[m]>=0?'var(--green)':'var(--rust)'};">${byMonth[m]>=0?'+':''}${fmtMoney(byMonth[m])}</b></span>`).join('')}</div>` : ''}
+
+    ${unsold.length ? `
+      <div class="section-label">Allotted — not sold yet (${unsold.length})</div>
+      <div class="card" style="padding:4px 12px;">
+        ${unsold.map(a=>{ const ipo=ipoById(a.ipoId), ap=applicantById(a.applicantId); return `<div class="al-row">
+          <div class="al-main"><div class="al-name">${esc(ipo?ipo.name:'IPO')}</div><div class="al-meta tabular">${esc(ap?ap.name:'—')} · ${fmtMoney(a.allottedAmount)}</div></div>
+          <button class="btn sm ghost" data-sell="${a.id}">Record sale</button></div>`; }).join('')}
+      </div>` : ''}
+
+    <div class="section-label">By IPO</div>
+    ${ipoGroups.length===0 ? `<div class="empty-state">${ICONS.profit}<div class="t">No sales recorded yet</div></div>` : `
+      <div class="card" style="padding:4px 12px;">
+        ${ipoGroups.map(g=>{
+          const ipo = ipoById(g.ipoId); const p = g.sold-g.inv-g.chg;
+          return `<details class="pf-ipo">
+            <summary>
+              <div class="al-main"><div class="al-name">${esc(ipo?ipo.name:'IPO')}</div>
+              <div class="al-meta tabular">${g.n} sale${g.n>1?'s':''} · ${fmtMoney(g.inv)} → ${fmtMoney(g.sold)}${g.chg?` · charges ${fmtMoney(g.chg)}`:''}</div></div>
+              <div class="money ${p>=0?'plus':'minus'} tabular">${p>=0?'+':''}${fmtMoney(p)}</div>
+            </summary>
+            ${g.rows.map(x=>{ const ap=applicantById(x.applicantId); const q=net(x); return `<div class="pf-row"><span>${esc(ap?ap.name:'—')} <span style="color:var(--ink-faint);font-size:11.5px;">· ${fmtDate(x.saleDate)}</span></span><span class="tabular" style="color:${q>=0?'var(--green)':'var(--rust)'};">${q>=0?'+':''}${fmtMoney(q)}</span></div>`; }).join('')}
+          </details>`;
         }).join('')}
-      </div>
-    `}
+      </div>`}
   `;
-  document.getElementById('add-sale').addEventListener('click', openSaleModal);
+  document.getElementById('add-sale').addEventListener('click', ()=>openSaleModal());
+  main.querySelectorAll('[data-sell]').forEach(b=>b.addEventListener('click',()=>openSaleModal(b.dataset.sell)));
 }
-function openSaleModal(){
+function openSaleModal(preselectId){
   const allottedApps = State.applications.filter(a=>(a.allottedAmount||0)>0);
   openModal(`
     <div class="modal">
@@ -2235,7 +2333,7 @@ function openSaleModal(){
             <option value="">— select —</option>
             ${allottedApps.map(a=>{
               const ipo=ipoById(a.ipoId), ap=applicantById(a.applicantId);
-              return `<option value="${a.id}">${esc(ipo?ipo.name:'IPO')} · ${esc(ap?ap.name:'—')} (Allotted ${fmtMoney(a.allottedAmount)})</option>`;
+              return `<option value="${a.id}" ${a.id===preselectId?'selected':''}>${esc(ipo?ipo.name:'IPO')} · ${esc(ap?ap.name:'—')} (Allotted ${fmtMoney(a.allottedAmount)})</option>`;
             }).join('')}
           </select>
         </label>
@@ -2254,6 +2352,7 @@ function openSaleModal(){
       </div>
     </div>
   `);
+  if(preselectId){ const pa=State.applications.find(a=>a.id===preselectId); if(pa) document.getElementById('s-invest').value = pa.allottedAmount||''; }
   document.getElementById('s-app').addEventListener('change',(e)=>{
     const app = State.applications.find(a=>a.id===e.target.value);
     if(app) document.getElementById('s-invest').value = app.allottedAmount||'';
@@ -2438,7 +2537,7 @@ function openAllotmentModal(ipoId){
 
   const pendingRow = (a)=>{
     const applicant = applicantById(a.applicantId);
-    return `<div class="al-row">
+    return `<div class="al-row" data-swipe="${a.id}">
       <div class="al-main">
         <div class="al-name">${esc(applicant?applicant.name:'—')}</div>
         <div class="al-meta tabular">${a.lots?a.lots+' lot'+(a.lots>1?'s':'')+' · ':''}${fmtMoney(a.amount)}</div>
@@ -2472,7 +2571,7 @@ function openAllotmentModal(ipoId){
         <button class="iconbtn" data-close="1" title="Close">✕</button>
       </div>
       <div class="row" style="margin-bottom:10px;">
-        <div class="meta" style="font-size:12px;color:var(--ink-faint);">${pend.length} pending${done.length?` · ${done.length} done`:''}</div>
+        <div class="meta" style="font-size:12px;color:var(--ink-faint);">${pend.length} pending${done.length?` · ${done.length} done`:''}${pend.length?' · swipe → allotted, ← not':''}</div>
         ${ipo.registrarUrl ? `<a class="link" href="${esc(ipo.registrarUrl)}" target="_blank" rel="noopener" style="font-size:12px;display:inline-flex;align-items:center;gap:5px;">${ICONS.external} Registrar site</a>` : ''}
       </div>
       ${apps.length===0 ? `<div class="empty-state"><div class="t">No applications for this IPO</div></div>` : ''}
@@ -2515,9 +2614,32 @@ function openAllotmentModal(ipoId){
       window.open(knownUrl, '_blank', 'noopener');
     }));
 
-    el.querySelectorAll('[data-set-status]').forEach(btn=>btn.addEventListener('click', async ()=>{
-      const app = State.applications.find(x=>x.id===btn.dataset.setStatus);
-      const status = btn.dataset.status;
+    el.querySelectorAll('[data-set-status]').forEach(btn=>btn.addEventListener('click', ()=>applyStatus(btn.dataset.setStatus, btn.dataset.status)));
+
+    // Swipe a pending row: right = Allotted, left = Not allotted
+    el.querySelectorAll('.al-row[data-swipe]').forEach(row=>{
+      let x0=0,y0=0,dx=0,active=false,locked=false;
+      row.addEventListener('touchstart',(e)=>{ const t=e.touches[0]; x0=t.clientX; y0=t.clientY; dx=0; active=true; locked=false; row.style.transition='none'; },{passive:true});
+      row.addEventListener('touchmove',(e)=>{
+        if(!active) return; const t=e.touches[0]; dx=t.clientX-x0; const dy=t.clientY-y0;
+        if(!locked){ if(Math.abs(dx)>10 && Math.abs(dx)>Math.abs(dy)*1.5) locked=true; else if(Math.abs(dy)>10){ active=false; return; } }
+        if(locked){
+          row.style.transform=`translateX(${Math.max(-140,Math.min(140,dx))}px)`;
+          row.style.background = dx>0 ? 'rgba(80,200,120,.14)' : 'rgba(255,107,74,.14)';
+        }
+      },{passive:true});
+      row.addEventListener('touchend',()=>{
+        if(!active) return; active=false;
+        row.style.transition='transform .15s ease'; row.style.transform=''; row.style.background='';
+        if(locked && Math.abs(dx)>=90) applyStatus(row.dataset.swipe, dx>0 ? 'allotted' : 'not_allotted');
+      });
+    });
+  }
+
+  async function applyStatus(appId, status){
+    {
+      const app = State.applications.find(x=>x.id===appId);
+      if(!app) return;
       app.allotmentStatus = status;
       if(status==='not_allotted'){
         app.allottedAmount = 0; app.refundedAmount = app.amount||0; app.refundDate = app.refundDate || todayStr();
@@ -2529,19 +2651,29 @@ function openAllotmentModal(ipoId){
       await idbPut('applications', app);
       paint();      // redraw only the modal body: no animation, scroll position kept
       State._onModalClose = ()=>{ const y=window.scrollY; render(); window.scrollTo(0,y); };  // refresh page behind it once, on close
-    }));
+    }
   }
   paint();
 }
 
 /* ==================== SETTINGS ==================== */
 function renderSettings(main){
+  setTimeout(()=>{ const sv=()=>lsSet('ipoledger_gmprule',{apply:Number(document.getElementById('rule-apply').value)||15, skip:Number(document.getElementById('rule-skip').value)}); ['rule-apply','rule-skip'].forEach(id=>{ const e=document.getElementById(id); if(e) e.addEventListener('change',sv); }); },0);
   const installed = isStandalone();
   const canPrompt = !!deferredInstallPrompt;
   const ios = isIOS();
   main.innerHTML = `
     <h1 class="page-title">Settings</h1>
     <p class="page-sub">Manage your data and appearance</p>
+
+    <div class="section-label">Apply / Skip rule</div>
+    <div class="card">
+      <div style="font-size:12.5px;color:var(--ink-faint);margin-bottom:10px;">Tags IPOs you can still apply to, using GMP %. At or above the first number is “Apply”, below the second is “Skip”, in between is “Maybe”.</div>
+      <div class="grid cols-2">
+        <label class="field">Apply at GMP ≥ (%)<input type="number" id="rule-apply" value="${gmpRule().apply}"></label>
+        <label class="field">Skip below GMP (%)<input type="number" id="rule-skip" value="${gmpRule().skip}"></label>
+      </div>
+    </div>
 
     <div class="section-label">Account</div>
     <div class="card">
