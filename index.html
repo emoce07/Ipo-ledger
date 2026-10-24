@@ -1751,8 +1751,60 @@ function loadScriptOnce(url){
     document.head.appendChild(el);
   });
 }
-async function fileToText(file){
+async function imageToCanvas(file){
+  const bmp = await createImageBitmap(file);
+  const scale = Math.min(2400/bmp.width, Math.max(1, 1600/bmp.width));        // upscale small shots, cap huge ones
+  const c = document.createElement('canvas');
+  c.width = Math.round(bmp.width*scale); c.height = Math.round(bmp.height*scale);
+  const g = c.getContext('2d'); g.drawImage(bmp,0,0,c.width,c.height);
+  const img = g.getImageData(0,0,c.width,c.height), d = img.data;
+  let sum=0; for(let i=0;i<d.length;i+=4){ sum += (d[i]*0.3+d[i+1]*0.59+d[i+2]*0.11); }
+  const invert = (sum/(d.length/4)) < 120;                                    // dark-mode screenshots: light text on dark
+  for(let i=0;i<d.length;i+=4){
+    let v = d[i]*0.3+d[i+1]*0.59+d[i+2]*0.11; if(invert) v = 255-v;
+    v = Math.max(0,Math.min(255,(v-128)*1.4+128));                            // a little contrast
+    d[i]=d[i+1]=d[i+2]=v;
+  }
+  g.putImageData(img,0,0);
+  return c;
+}
+// OCR often swaps look-alike characters (O/0, I/1, S/5…) and sometimes splits an ID with spaces;
+// repair anything that clearly has the shape of a PAN or BO ID.
+function fixOcrIds(text){
+  const toD={O:'0',Q:'0',D:'0',I:'1',L:'1','|':'1',S:'5',B:'8',Z:'2'}, toL={'0':'O','1':'I','5':'S','8':'B','2':'Z'};
+  const coercePan = (u)=>{
+    if(u.length!==10) return null;
+    const a=u.slice(0,5), b=u.slice(5,9), c=u[9];
+    if(!(/^[A-Z0158]{5}$/.test(a) && (a.match(/[A-Z]/g)||[]).length>=3 && /^[0-9OQDILSBZ|]{4}$/.test(b) && (b.match(/[0-9]/g)||[]).length>=2 && /^[A-Z0158]$/.test(c))) return null;
+    const f=[...a].map(ch=>toL[ch]||ch).join('')+[...b].map(ch=>toD[ch]||ch).join('')+(toL[c]||c);
+    return /^[A-Z]{5}[0-9]{4}[A-Z]$/.test(f) ? f : null;
+  };
+  const coerceBo = (u)=> (u.length===16 && /^[0-9OQDILSBZ|]{16}$/.test(u) && (u.match(/[0-9]/g)||[]).length>=10) ? [...u].map(ch=>toD[ch]||ch).join('') : null;
+  const fixTok = (t)=>{ const u=t.toUpperCase(); return coercePan(u) || coerceBo(u) || t; };
+  return String(text).split('\n').map(line=>{
+    let toks = line.trim().split(/\s+/).filter(Boolean);
+    const hasPan = toks.some(t=>coercePan(t.toUpperCase())), hasBo = toks.some(t=>coerceBo(t.toUpperCase()));
+    const out=[];
+    for(let i=0;i<toks.length;){
+      let joined=null, used=0;
+      for(let n=2;n<=5 && i+n<=toks.length;n++){                       // try gluing split pieces back together
+        const u = toks.slice(i,i+n).join('').toUpperCase();
+        if(!hasPan && coercePan(u)){ joined=coercePan(u); used=n; break; }
+        if(!hasBo && coerceBo(u)){ joined=coerceBo(u); used=n; break; }
+      }
+      if(joined){ out.push(joined); i+=used; } else { out.push(fixTok(toks[i])); i++; }
+    }
+    return out.join(' ').replace(/^[^A-Za-z0-9]+/,'');
+  }).join('\n');
+}
+async function fileToText(file, onProgress){
   const name=(file.name||'').toLowerCase();
+  if(file.type.startsWith('image/') || /\.(jpe?g|png|webp|heic|bmp)$/.test(name)){
+    await loadScriptOnce('https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js');
+    const canvas = await imageToCanvas(file);
+    const r = await Tesseract.recognize(canvas, 'eng', { logger: m=>{ if(onProgress && m.status) onProgress(m.status, m.progress); } });
+    return fixOcrIds(r.data.text || '');
+  }
   if(/\.(csv|txt)$/.test(name) || file.type.startsWith('text/')) return await file.text();
   if(/\.(xlsx|xls)$/.test(name)){
     await loadScriptOnce('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js');
@@ -1789,18 +1841,20 @@ async function fileToText(file){
 
 function openImportApplicantsModal(){
   let rows = [];
+  let fromOcr = false;
 
   function stepInput(prefill){
     const m = document.getElementById('imp-modal');
     m.innerHTML = `
       <h3 style="margin:0 0 4px;">Import applicants</h3>
-      <div class="set-sub" style="margin-bottom:10px;">Paste one person per line — name with PAN and/or BO ID, in any order. Or choose a CSV, Excel, PDF or text file. Handled on this device only.</div>
+      <div class="set-sub" style="margin-bottom:10px;">Paste one person per line — name with PAN and/or BO ID, in any order. Or choose a CSV, Excel, PDF, text file or a photo/screenshot. Handled on this device only.</div>
       <textarea id="imp-text" rows="8" placeholder="Ansh ABCDE1234F&#10;Amulya, FGHIJ5678K, 1208160012345678&#10;Ashna 1208160098765432" style="width:100%;box-sizing:border-box;padding:10px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--ink);font-family:inherit;font-size:13px;resize:vertical;outline:none;">${esc(prefill||'')}</textarea>
       <div style="display:flex;align-items:center;gap:8px;margin-top:8px;">
         <button class="btn sm ghost" id="imp-file-btn">${ICONS.upload} Choose file</button>
-        <input type="file" id="imp-file" accept=".csv,.txt,.xlsx,.xls,.pdf,text/plain,text/csv,application/pdf" style="display:none;">
-        <span class="set-sub">CSV · Excel · PDF · text</span>
+        <input type="file" id="imp-file" accept=".csv,.txt,.xlsx,.xls,.pdf,image/*,text/plain,text/csv,application/pdf" style="display:none;">
+        <span class="set-sub">CSV · Excel · PDF · text · photo</span>
       </div>
+      <div class="set-sub" id="imp-status" style="margin-top:6px;min-height:14px;"></div>
       <div class="modal-actions">
         <button class="btn ghost" data-close="1">Cancel</button>
         <button class="btn primary" id="imp-preview">Preview</button>
@@ -1808,13 +1862,16 @@ function openImportApplicantsModal(){
     document.getElementById('imp-file-btn').addEventListener('click',()=>document.getElementById('imp-file').click());
     document.getElementById('imp-file').addEventListener('change', async (e)=>{
       const f = e.target.files[0]; if(!f) return;
-      toast('Reading file…');
+      const status = document.getElementById('imp-status');
+      const isImg = f.type.startsWith('image/') || /\.(jpe?g|png|webp|heic|bmp)$/i.test(f.name||'');
+      status.textContent = isImg ? 'Reading photo… first time downloads the reader, can take a few seconds' : 'Reading file…';
       try{
-        const txt = await fileToText(f);
-        if(!txt.trim()){ toast('No text found — scanned PDFs and photos can’t be read here. Copy the text and paste it instead.'); return; }
+        const txt = await fileToText(f, (st,pr)=>{ status.textContent = 'Reading photo… '+(pr!=null?Math.round(pr*100)+'%':st); });
+        fromOcr = isImg;
+        if(!txt.trim()){ status.textContent=''; toast(isImg ? 'Couldn’t read any text from this photo' : 'No text found — scanned PDFs can’t be read; copy the text and paste it'); return; }
         document.getElementById('imp-text').value = txt;
-        toast('File loaded — tap Preview');
-      }catch(err){ toast(err.message || 'Could not read this file'); }
+        status.textContent = isImg ? 'Photo read — check the text below, fix anything wrong, then Preview' : 'File loaded — tap Preview';
+      }catch(err){ status.textContent=''; toast(err.message || 'Could not read this file'); }
       e.target.value='';
     });
     document.getElementById('imp-preview').addEventListener('click',()=>{
@@ -1851,6 +1908,7 @@ function openImportApplicantsModal(){
     m.innerHTML = `
       <div class="row" style="margin-bottom:6px;"><h3 style="margin:0;">Review (${rows.length})</h3>
         <button class="btn sm ghost" id="imp-back">‹ Edit text</button></div>
+      ${fromOcr ? `<div class="set-sub" style="margin-bottom:8px;color:var(--gold);">⚠ Read from a photo — compare every PAN and BO ID with the original before saving. One wrong character breaks the allotment check.</div>` : ''}
       <div class="set-sub" style="margin-bottom:6px;">Untick anyone you don’t want. Fix names if the split looks wrong.</div>
       ${rows.map((r,i)=>`
         <div class="al-row">
