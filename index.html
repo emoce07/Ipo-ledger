@@ -340,12 +340,17 @@ a.link:hover{ text-decoration:underline; }
 .set-label{ font-size:13.5px; font-weight:600; }
 .set-sub{ font-size:11.5px; color:var(--ink-faint); margin-top:2px; line-height:1.35; }
 .rule-inputs{ display:flex; align-items:center; gap:6px; font-size:13px; color:var(--ink-faint); flex-shrink:0; }
-.num-sm{ width:56px; box-sizing:border-box; text-align:center; padding:7px 4px; border-radius:8px; border:1px solid var(--line); background:var(--card); color:var(--ink); font-family:inherit; font-size:13.5px; outline:none; }
+.rule-inputs input.num-sm, .num-sm{ width:56px !important; max-width:56px; flex:none; margin:0; box-sizing:border-box; text-align:center; padding:7px 4px; border-radius:8px; border:1px solid var(--line); background:var(--card); color:var(--ink); font-family:inherit; font-size:13.5px; outline:none; }
 .num-sm:focus{ border-color:var(--seal); }
 .set-tools{ margin-top:18px; border:1px solid var(--line); border-radius:12px; padding:0 14px; }
 .set-tools summary{ padding:12px 0; font-size:13px; color:var(--ink-faint); cursor:pointer; list-style:none; }
 .set-tools summary::-webkit-details-marker{ display:none; }
 .set-tools[open] summary{ border-bottom:1px solid var(--line); }
+
+.set-3{ display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; }
+.set-3 .btn{ padding:11px 6px; font-size:13px; gap:6px; justify-content:center; white-space:nowrap; }
+.set-3 .btn svg{ width:16px; height:16px; flex:none; }
+.set-row > div:first-child{ min-width:0; flex:1; }
 </style>
 </head>
 <body>
@@ -2732,14 +2737,14 @@ function renderSettings(main){
     </div>
 
     <div class="section-label">Manage</div>
-    <div class="grid cols-3">
+    <div class="set-3">
       <button class="btn ghost" data-goto="banks">${ICONS.bank} Banks</button>
       <button class="btn ghost" data-goto="applicants">${ICONS.people} People</button>
       <button class="btn ghost" data-goto="ipos">${ICONS.ipo} IPOs</button>
     </div>
 
     <div class="section-label">Data <span style="text-transform:none;letter-spacing:0;font-weight:500;color:var(--ink-faint);">· stored on this device, works offline</span></div>
-    <div class="grid cols-3">
+    <div class="set-3">
       <button class="btn primary" id="s-export">${ICONS.download} Export</button>
       <button class="btn ghost" id="s-import">${ICONS.upload} Import</button>
       <button class="btn danger" id="s-wipe">${ICONS.trash} Erase</button>
