@@ -334,6 +334,18 @@ a.link:hover{ text-decoration:underline; }
 .pf-ipo summary{ display:flex; align-items:center; gap:8px; padding:9px 0; cursor:pointer; list-style:none; }
 .pf-ipo summary::-webkit-details-marker{ display:none; }
 .pf-row{ display:flex; justify-content:space-between; font-size:12.5px; padding:5px 0 5px 10px; color:var(--ink-dim); }
+
+/* --- v9: tidy settings --- */
+.set-row{ display:flex; align-items:center; justify-content:space-between; gap:12px; padding:11px 0; border-bottom:1px solid var(--line); }
+.set-label{ font-size:13.5px; font-weight:600; }
+.set-sub{ font-size:11.5px; color:var(--ink-faint); margin-top:2px; line-height:1.35; }
+.rule-inputs{ display:flex; align-items:center; gap:6px; font-size:13px; color:var(--ink-faint); flex-shrink:0; }
+.num-sm{ width:56px; box-sizing:border-box; text-align:center; padding:7px 4px; border-radius:8px; border:1px solid var(--line); background:var(--card); color:var(--ink); font-family:inherit; font-size:13.5px; outline:none; }
+.num-sm:focus{ border-color:var(--seal); }
+.set-tools{ margin-top:18px; border:1px solid var(--line); border-radius:12px; padding:0 14px; }
+.set-tools summary{ padding:12px 0; font-size:13px; color:var(--ink-faint); cursor:pointer; list-style:none; }
+.set-tools summary::-webkit-details-marker{ display:none; }
+.set-tools[open] summary{ border-bottom:1px solid var(--line); }
 </style>
 </head>
 <body>
@@ -2662,107 +2674,88 @@ function renderSettings(main){
   const installed = isStandalone();
   const canPrompt = !!deferredInstallPrompt;
   const ios = isIOS();
+  const themeSaved = localStorage.getItem('ipo-theme');
+  const notifOk = ('Notification' in window);
+  const syncLine = State.lastCloudSync
+    ? `<span style="color:${State.lastCloudSync.ok?'var(--green)':'var(--rust)'};">${State.lastCloudSync.ok?'✓ Synced':'⚠ Sync failed'} · ${new Date(State.lastCloudSync.at).toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</span>`
+    : `<span style="color:var(--green);">✓ Syncing to your account</span>`;
   main.innerHTML = `
     <h1 class="page-title">Settings</h1>
-    <p class="page-sub">Manage your data and appearance</p>
 
-    <div class="section-label">Apply / Skip rule</div>
-    <div class="card">
-      <div style="font-size:12.5px;color:var(--ink-faint);margin-bottom:10px;">Tags IPOs you can still apply to, using GMP %. At or above the first number is “Apply”, below the second is “Skip”, in between is “Maybe”.</div>
-      <div class="grid cols-2">
-        <label class="field">Apply at GMP ≥ (%)<input type="number" id="rule-apply" value="${gmpRule().apply}"></label>
-        <label class="field">Skip below GMP (%)<input type="number" id="rule-skip" value="${gmpRule().skip}"></label>
-      </div>
-    </div>
-
-    <div class="section-label">Account</div>
-    <div class="card">
+    <div class="card" style="padding:12px 14px;margin-top:8px;">
       ${State.user ? `
         <div style="display:flex;align-items:center;gap:12px;">
-          ${State.user.photoURL ? `<img src="${esc(State.user.photoURL)}" style="width:40px;height:40px;border-radius:50%;flex-shrink:0;">` : `<div style="width:40px;height:40px;border-radius:50%;background:var(--gold);flex-shrink:0;"></div>`}
+          ${State.user.photoURL ? `<img src="${esc(State.user.photoURL)}" style="width:38px;height:38px;border-radius:50%;flex-shrink:0;">` : `<div style="width:38px;height:38px;border-radius:50%;background:var(--gold);flex-shrink:0;"></div>`}
           <div style="min-width:0;flex:1;">
-            <div style="font-size:14px;font-weight:600;">${esc(State.user.displayName||'Signed in')}</div>
-            <div style="font-size:12px;color:var(--ink-faint);">${esc(State.user.email||'')}</div>
+            <div style="font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(State.user.displayName||'Signed in')}</div>
+            <div class="set-sub" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(State.user.email||'')}</div>
           </div>
+          <button class="btn sm ghost" id="settings-signout-btn">Sign out</button>
         </div>
-        <p style="font-size:12.5px;color:var(--green);margin:10px 0 0;">✅ Your data syncs to this account — sign in with the same Google account on any device to see it there too.</p>
-        ${State.lastCloudSync ? `
-          <p style="font-size:11.5px;color:${State.lastCloudSync.ok?'var(--ink-faint)':'var(--rust)'};margin:4px 0 0;">
-            ${State.lastCloudSync.ok?'Last synced':'Last sync failed'} ${new Date(State.lastCloudSync.at).toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}
-          </p>
-        ` : ''}
-        <button class="btn ghost" id="settings-signout-btn" style="margin-top:12px;">Sign out</button>
+        <div class="set-sub" style="margin-top:8px;">${syncLine}</div>
       ` : `
-        <p style="font-size:13px;color:var(--ink-dim);margin:0 0 12px;">Sign in with Google to access your data from any device. Without signing in, your data stays only on this device.</p>
-        <button class="btn primary" id="settings-signin-btn">${ICONS.external} Sign in with Google</button>
+        <div class="set-row" style="border:none;padding:0;">
+          <div><div class="set-label">Not signed in</div><div class="set-sub">Data stays on this device only</div></div>
+          <button class="btn sm primary" id="settings-signin-btn">Sign in with Google</button>
+        </div>
       `}
     </div>
 
-    <div class="section-label">Install as an app</div>
-    <div class="card">
-      ${installed ? `
-        <p style="font-size:13px;color:var(--green);margin:0;">✅ Already running as an installed app.</p>
-      ` : canPrompt ? `
-        <p style="font-size:13px;color:var(--ink-dim);margin:0 0 12px;">Install IPO Ledger to your home screen — it opens full-screen, like a native app, and keeps working offline.</p>
-        <button class="btn primary" id="install-btn">${ICONS.download} Install app</button>
-      ` : ios ? `
-        <p style="font-size:13px;color:var(--ink-dim);margin:0 0 6px;">On iPhone/iPad: tap the <b>Share</b> button in Safari's toolbar, then <b>Add to Home Screen</b>. It'll then open full-screen from your home screen like any other app.</p>
-        <p style="font-size:11.5px;color:var(--ink-faint);margin:0;">This only works in Safari — Chrome/Firefox on iOS can't install home-screen apps due to Apple's restrictions.</p>
-      ` : `
-        <p style="font-size:13px;color:var(--ink-dim);margin:0 0 6px;">Your browser hasn't offered an install prompt yet. Look for an <b>Install</b> or <b>Add to Home Screen</b> option in your browser's menu (⋮ or share icon) while viewing this page.</p>
-        <p style="font-size:11.5px;color:var(--ink-faint);margin:0;">Some browsers only show this after you've visited the page a couple of times.</p>
-      `}
-    </div>
-
-    <div class="section-label">Notifications</div>
-    <div class="card">
-      ${(!('Notification' in window)) ? `
-        <p style="font-size:13px;color:var(--ink-dim);margin:0;">Notifications aren't supported in this browser.</p>
-      ` : Notification.permission==='granted' ? `
-        <p style="font-size:13px;color:var(--green);margin:0;">✅ Enabled — you'll get an alert for IPOs closing today and allotment-day reminders whenever you open the app. On Android, installed as an app, Chrome may also check in the background every so often — timing isn't guaranteed, but it doesn't strictly require opening the app that day.</p>
-      ` : Notification.permission==='denied' ? `
-        <p style="font-size:13px;color:var(--rust);margin:0 0 6px;">Blocked. Enable notifications for this site in your browser's site settings to turn this on.</p>
-      ` : `
-        <p style="font-size:13px;color:var(--ink-dim);margin:0 0 12px;">Get an alert for IPOs closing today (with GMP) and a reminder to check allotment on allotment day. On Android (installed as an app), Chrome can also run this check in the background on its own schedule, not just when you open the app — timing isn't exact, and this needs the app to be installed to your home screen first. On iPhone, Apple doesn't allow background checks for web apps at all, so this only fires on open there.</p>
-        <button class="btn primary" id="enable-notif-btn">Enable notifications</button>
-      `}
-    </div>
-
-    <div class="section-label">Appearance</div>
-    <div class="card">
-      <div class="row">
-        <div style="font-size:13.5px;">Theme</div>
+    <div class="section-label">Preferences</div>
+    <div class="card" style="padding:2px 14px;">
+      <div class="set-row">
+        <div class="set-label">Theme</div>
         <div class="pill-tabs" style="margin:0;">
-          <button data-theme-btn="system" class="${!localStorage.getItem('ipo-theme')?'active':''}">System</button>
-          <button data-theme-btn="light" class="${localStorage.getItem('ipo-theme')==='light'?'active':''}">Light</button>
-          <button data-theme-btn="dark" class="${localStorage.getItem('ipo-theme')==='dark'?'active':''}">Dark</button>
+          <button data-theme-btn="system" class="${!themeSaved?'active':''}">Auto</button>
+          <button data-theme-btn="light" class="${themeSaved==='light'?'active':''}">Light</button>
+          <button data-theme-btn="dark" class="${themeSaved==='dark'?'active':''}">Dark</button>
+        </div>
+      </div>
+      <div class="set-row">
+        <div><div class="set-label">Notifications</div>
+          <div class="set-sub">${!notifOk ? 'Not supported in this browser' : Notification.permission==='granted' ? 'Alerts for closing IPOs and allotment day when you open the app' : Notification.permission==='denied' ? 'Blocked — allow in your browser’s site settings' : 'Closing-day and allotment-day alerts'}</div></div>
+        ${!notifOk ? '' : Notification.permission==='granted' ? `<span style="color:var(--green);font-size:13px;font-weight:600;">On</span>` : Notification.permission==='denied' ? `<span style="color:var(--rust);font-size:13px;font-weight:600;">Blocked</span>` : `<button class="btn sm primary" id="enable-notif-btn">Enable</button>`}
+      </div>
+      ${installed ? '' : `
+      <div class="set-row">
+        <div><div class="set-label">Install app</div>
+          <div class="set-sub">${canPrompt ? 'Opens full-screen and works offline' : ios ? 'Safari: Share → Add to Home Screen' : 'Use your browser menu → Install / Add to Home Screen'}</div></div>
+        ${canPrompt ? `<button class="btn sm primary" id="install-btn">Install</button>` : ''}
+      </div>`}
+      <div class="set-row" style="border-bottom:none;">
+        <div><div class="set-label">Apply / Skip rule</div><div class="set-sub">GMP % tag: Apply at or above, Skip below</div></div>
+        <div class="rule-inputs">
+          <span>≥</span><input type="number" id="rule-apply" class="num-sm" value="${gmpRule().apply}" inputmode="decimal">
+          <span>&lt;</span><input type="number" id="rule-skip" class="num-sm" value="${gmpRule().skip}" inputmode="decimal">
         </div>
       </div>
     </div>
+
     <div class="section-label">Manage</div>
     <div class="grid cols-3">
       <button class="btn ghost" data-goto="banks">${ICONS.bank} Banks</button>
-      <button class="btn ghost" data-goto="applicants">${ICONS.people} Applicants</button>
+      <button class="btn ghost" data-goto="applicants">${ICONS.people} People</button>
       <button class="btn ghost" data-goto="ipos">${ICONS.ipo} IPOs</button>
     </div>
-    <div class="section-label">Data</div>
-    <div class="card">
-      <p style="font-size:13px;color:var(--ink-dim);margin:0 0 12px;">All data is stored locally on this device (IndexedDB) and works offline. Export a backup regularly.</p>
-      <div class="settings-actions">
-        <button class="btn primary" id="s-export">${ICONS.download} Export backup</button>
-        <button class="btn ghost" id="s-import">${ICONS.upload} Import backup</button>
-        <button class="btn danger" id="s-wipe">${ICONS.trash} Erase all data</button>
+
+    <div class="section-label">Data <span style="text-transform:none;letter-spacing:0;font-weight:500;color:var(--ink-faint);">· stored on this device, works offline</span></div>
+    <div class="grid cols-3">
+      <button class="btn primary" id="s-export">${ICONS.download} Export</button>
+      <button class="btn ghost" id="s-import">${ICONS.upload} Import</button>
+      <button class="btn danger" id="s-wipe">${ICONS.trash} Erase</button>
+    </div>
+
+    <details class="set-tools">
+      <summary>Fixes &amp; tools</summary>
+      <div class="set-row">
+        <div><div class="set-label">Tag SME IPOs</div><div class="set-sub">Marks older IPOs with “SME” in the name as SME</div></div>
+        <button class="btn sm ghost" id="s-fix-sme">Run</button>
       </div>
-    </div>
-    <div class="section-label">One-time fixes</div>
-    <div class="card">
-      <p style="font-size:13px;color:var(--ink-dim);margin:0 0 12px;">IPOs added before the SME/Mainboard split have no type set, so they all default to Mainboard. This scans your existing IPOs and tags any with "SME" in the name as SME — it won't touch ones that already have a type set correctly.</p>
-      <button class="btn ghost" id="s-fix-sme">${ICONS.ipo} Auto-detect SME IPOs</button>
-    </div>
-    <div class="card" style="margin-top:10px;">
-      <p style="font-size:13px;color:var(--ink-dim);margin:0 0 12px;">Sync used to create a duplicate entry when the live feed's IPO name didn't exactly match one you already had (e.g. "Company (India) IPO" vs "Company IPO"). This has been fixed for future syncs — this button cleans up any duplicates already sitting in your data, keeping whichever entry has more complete info and moving any applications over to it.</p>
-      <button class="btn ghost" id="s-merge-dupes">${ICONS.ipo} Find & merge duplicate IPOs</button>
-    </div>
+      <div class="set-row" style="border-bottom:none;">
+        <div><div class="set-label">Merge duplicate IPOs</div><div class="set-sub">Combines entries like “Co (India) IPO” and “Co IPO”</div></div>
+        <button class="btn sm ghost" id="s-merge-dupes">Run</button>
+      </div>
+    </details>
   `;
   const installBtn = document.getElementById('install-btn');
   if(installBtn) installBtn.addEventListener('click', async ()=>{
