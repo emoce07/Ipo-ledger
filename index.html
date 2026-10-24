@@ -1653,7 +1653,10 @@ function renderBankDetail(bankId){
 function renderApplicants(main){
   main.innerHTML = `
     <div class="row"><h1 class="page-title">Applicants</h1>
-      <button class="btn primary" id="add-applicant">${ICONS.plus} Add applicant</button>
+      <div style="display:flex;gap:8px;">
+        <button class="btn ghost sm" id="import-applicants">${ICONS.upload} Import</button>
+        <button class="btn primary sm" id="add-applicant">${ICONS.plus} Add</button>
+      </div>
     </div>
     <p class="page-sub">People whose demat accounts you use for applications</p>
     ${State.applicants.length===0 ? `<div class="empty-state">${ICONS.people}<div class="t">No applicants yet</div><div class="s">Add the people you apply for.</div></div>` : `
@@ -1676,6 +1679,7 @@ function renderApplicants(main){
     <div id="applicant-detail"></div>
   `;
   document.getElementById('add-applicant').addEventListener('click',()=>openApplicantModal(null));
+  document.getElementById('import-applicants').addEventListener('click',()=>openImportApplicantsModal());
   main.querySelectorAll('[data-edit-applicant]').forEach(el=>el.addEventListener('click',()=>openApplicantModal(applicantById(el.dataset.editApplicant))));
   main.querySelectorAll('[data-del-applicant]').forEach(el=>el.addEventListener('click',()=>confirmDeleteApplicant(el.dataset.delApplicant)));
   main.querySelectorAll('[data-view-applicant]').forEach(el=>el.addEventListener('click',()=>renderApplicantDetail(el.dataset.viewApplicant)));
@@ -1714,6 +1718,181 @@ function openApplicantModal(applicant){
     closeModal(); toast(isEdit?'Applicant updated':'Applicant added'); render();
   });
 }
+
+/* ---- Bulk import of applicants (paste text / CSV) ---- */
+function parseApplicantText(text){
+  const PAN = /\b[A-Z]{5}[0-9]{4}[A-Z]\b/;
+  const BO  = /\b(?:IN[0-9]{14}|[0-9]{16})\b/;
+  const out = [];
+  String(text||'').split(/\r?\n/).forEach(raw=>{
+    let line = raw.replace(/^\s*(?:[-*•·☐☑✓✔]|\[[ xX]?\]|\d+[.)])\s*/,'').trim();
+    if(!line) return;
+    line = line.replace(/\b(\d{4})[ -](\d{4})[ -](\d{4})[ -](\d{4})\b/g,'$1$2$3$4');   // BO IDs written with spaces/dashes
+    const up = line.toUpperCase();
+    const pm = up.match(PAN), bm = up.match(BO);
+    const pan = pm ? pm[0] : '', boid = bm ? bm[0] : '';
+    let name = line;
+    if(pan)  name = name.replace(new RegExp(pan,'i'),' ');
+    if(boid) name = name.replace(new RegExp(boid,'i'),' ');
+    name = name.replace(/\b(pan|bo\s?id|boid|demat|dp\s?id|client\s?id)\b/gi,' ')
+               .replace(/[,;|\t:–—=]+/g,' ').replace(/\s-\s/g,' ').replace(/\s+/g,' ').trim();
+    if(!pan && !boid && (!name || /^name$/i.test(name))) return;       // blanks and CSV header rows
+    out.push({ name, pan, boid });
+  });
+  return out;
+}
+
+
+function loadScriptOnce(url){
+  return new Promise((res,rej)=>{
+    if(document.querySelector(`script[data-lib="${url}"]`)) return res();
+    const el=document.createElement('script'); el.src=url; el.dataset.lib=url;
+    el.onload=()=>res(); el.onerror=()=>rej(new Error('Could not load reader (check internet)'));
+    document.head.appendChild(el);
+  });
+}
+async function fileToText(file){
+  const name=(file.name||'').toLowerCase();
+  if(/\.(csv|txt)$/.test(name) || file.type.startsWith('text/')) return await file.text();
+  if(/\.(xlsx|xls)$/.test(name)){
+    await loadScriptOnce('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js');
+    const wb = XLSX.read(await file.arrayBuffer(), {type:'array'});
+    const lines=[];
+    wb.SheetNames.forEach(n=>{
+      XLSX.utils.sheet_to_json(wb.Sheets[n], {header:1, blankrows:false, defval:''}).forEach(r=>{
+        const l=r.map(c=>String(c).trim()).filter(Boolean).join(' ');
+        if(l) lines.push(l);
+      });
+    });
+    return lines.join('\n');
+  }
+  if(/\.pdf$/.test(name)){
+    await loadScriptOnce('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js');
+    pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    const pdf = await pdfjsLib.getDocument({data: new Uint8Array(await file.arrayBuffer())}).promise;
+    const lines=[];
+    for(let pn=1; pn<=pdf.numPages; pn++){
+      const tc = await (await pdf.getPage(pn)).getTextContent();
+      const items = tc.items.filter(i=>i.str && i.str.trim()).map(i=>({t:i.str, x:i.transform[4], y:i.transform[5]}));
+      items.sort((a,b)=>b.y-a.y || a.x-b.x);
+      let cur=[], cy=null;
+      items.forEach(i=>{
+        if(cy!==null && Math.abs(i.y-cy)>3){ lines.push(cur.sort((a,b)=>a.x-b.x).map(z=>z.t).join(' ')); cur=[]; }
+        cur.push(i); cy=i.y;
+      });
+      if(cur.length) lines.push(cur.sort((a,b)=>a.x-b.x).map(z=>z.t).join(' '));
+    }
+    return lines.join('\n');
+  }
+  throw new Error('Unsupported file type');
+}
+
+function openImportApplicantsModal(){
+  let rows = [];
+
+  function stepInput(prefill){
+    const m = document.getElementById('imp-modal');
+    m.innerHTML = `
+      <h3 style="margin:0 0 4px;">Import applicants</h3>
+      <div class="set-sub" style="margin-bottom:10px;">Paste one person per line — name with PAN and/or BO ID, in any order. Or choose a CSV, Excel, PDF or text file. Handled on this device only.</div>
+      <textarea id="imp-text" rows="8" placeholder="Ansh ABCDE1234F&#10;Amulya, FGHIJ5678K, 1208160012345678&#10;Ashna 1208160098765432" style="width:100%;box-sizing:border-box;padding:10px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--ink);font-family:inherit;font-size:13px;resize:vertical;outline:none;">${esc(prefill||'')}</textarea>
+      <div style="display:flex;align-items:center;gap:8px;margin-top:8px;">
+        <button class="btn sm ghost" id="imp-file-btn">${ICONS.upload} Choose file</button>
+        <input type="file" id="imp-file" accept=".csv,.txt,.xlsx,.xls,.pdf,text/plain,text/csv,application/pdf" style="display:none;">
+        <span class="set-sub">CSV · Excel · PDF · text</span>
+      </div>
+      <div class="modal-actions">
+        <button class="btn ghost" data-close="1">Cancel</button>
+        <button class="btn primary" id="imp-preview">Preview</button>
+      </div>`;
+    document.getElementById('imp-file-btn').addEventListener('click',()=>document.getElementById('imp-file').click());
+    document.getElementById('imp-file').addEventListener('change', async (e)=>{
+      const f = e.target.files[0]; if(!f) return;
+      toast('Reading file…');
+      try{
+        const txt = await fileToText(f);
+        if(!txt.trim()){ toast('No text found — scanned PDFs and photos can’t be read here. Copy the text and paste it instead.'); return; }
+        document.getElementById('imp-text').value = txt;
+        toast('File loaded — tap Preview');
+      }catch(err){ toast(err.message || 'Could not read this file'); }
+      e.target.value='';
+    });
+    document.getElementById('imp-preview').addEventListener('click',()=>{
+      const parsed = parseApplicantText(document.getElementById('imp-text').value);
+      if(!parsed.length){ toast('Nothing recognised — put each person on a new line'); return; }
+      rows = classify(parsed);
+      stepPreview();
+    });
+  }
+
+  function classify(parsed){
+    const seen = new Set();
+    return parsed.map(p=>{
+      const lname = p.name.toLowerCase();
+      const ex = State.applicants.find(a=> (p.pan && a.pan===p.pan) || (p.boid && a.boid===p.boid) || (lname && (a.name||'').toLowerCase()===lname));
+      const key = p.pan || p.boid || lname;
+      const repeat = seen.has(key); seen.add(key);
+      let kind='new', note='New', on=true;
+      if(repeat){ kind='skip'; note='Repeated in list'; on=false; }
+      else if(ex){
+        const conflict = (p.pan && ex.pan && p.pan!==ex.pan) || (p.boid && ex.boid && p.boid!==ex.boid);
+        const adds = (p.pan && !ex.pan) || (p.boid && !ex.boid);
+        if(conflict){ kind='skip'; note='Different ID from saved'; on=false; }
+        else if(adds){ kind='update'; note='Adds missing ID'; on=true; }
+        else { kind='skip'; note='Already added'; on=false; }
+      } else if(!p.pan && !p.boid){ note='New · no ID'; }
+      return { ...p, ex, kind, note, on };
+    });
+  }
+
+  function stepPreview(){
+    const m = document.getElementById('imp-modal');
+    const n = rows.filter(r=>r.on).length;
+    m.innerHTML = `
+      <div class="row" style="margin-bottom:6px;"><h3 style="margin:0;">Review (${rows.length})</h3>
+        <button class="btn sm ghost" id="imp-back">‹ Edit text</button></div>
+      <div class="set-sub" style="margin-bottom:6px;">Untick anyone you don’t want. Fix names if the split looks wrong.</div>
+      ${rows.map((r,i)=>`
+        <div class="al-row">
+          <input type="checkbox" data-imp-on="${i}" ${r.on?'checked':''} ${r.kind==='skip'&&r.note==='Already added'?'disabled':''} style="width:18px;height:18px;flex:none;">
+          <div class="al-main">
+            <input type="text" data-imp-name="${i}" value="${esc(r.name)}" placeholder="Name" style="width:100%;box-sizing:border-box;background:none;border:none;border-bottom:1px dashed var(--line);color:var(--ink);font-family:inherit;font-size:13.5px;font-weight:600;padding:2px 0;outline:none;">
+            <div class="al-meta tabular">${r.pan?esc(r.pan):'<span style="color:var(--ink-faint)">no PAN</span>'} · ${r.boid?esc(r.boid):'<span style="color:var(--ink-faint)">no BO ID</span>'}</div>
+          </div>
+          <span class="gmptag" style="color:${r.kind==='new'?'var(--green)':r.kind==='update'?'var(--gold)':'var(--ink-faint)'};border-color:currentColor;white-space:nowrap;">${esc(r.note)}</span>
+        </div>`).join('')}
+      <div class="modal-actions">
+        <button class="btn ghost" data-close="1">Cancel</button>
+        <button class="btn primary" id="imp-save">Add ${n} selected</button>
+      </div>`;
+    m.querySelectorAll('[data-imp-on]').forEach(el=>el.addEventListener('change',()=>{ rows[+el.dataset.impOn].on = el.checked; const b=document.getElementById('imp-save'); b.textContent='Add '+rows.filter(r=>r.on).length+' selected'; }));
+    m.querySelectorAll('[data-imp-name]').forEach(el=>el.addEventListener('input',()=>{ rows[+el.dataset.impName].name = el.value; }));
+    document.getElementById('imp-back').addEventListener('click',()=>stepInput(rows.map(r=>[r.name,r.pan,r.boid].filter(Boolean).join(' ')).join('\n')));
+    document.getElementById('imp-save').addEventListener('click', async ()=>{
+      let added=0, updated=0;
+      for(const r of rows){
+        if(!r.on) continue;
+        const name = (r.name||'').trim();
+        if(r.kind==='update' && r.ex){                       // only fill what's missing, never overwrite
+          if(r.pan && !r.ex.pan) r.ex.pan = r.pan;
+          if(r.boid && !r.ex.boid) r.ex.boid = r.boid;
+          await idbPut('applicants', r.ex); updated++;
+        } else if(r.kind==='new'){
+          if(!name){ continue; }
+          const obj = { id: uid(), name, pan: r.pan||'', boid: r.boid||'' };
+          await idbPut('applicants', obj); State.applicants.push(obj); added++;
+        }
+      }
+      closeModal();
+      toast(`Added ${added}${updated?`, updated ${updated}`:''}`);
+      render();
+    });
+  }
+
+  openModal(`<div class="modal" id="imp-modal" style="max-width:520px;"></div>`);
+  stepInput('');
+}
+
 function confirmDeleteApplicant(id){
   openModal(`
     <div class="modal">
