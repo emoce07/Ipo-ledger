@@ -351,6 +351,10 @@ a.link:hover{ text-decoration:underline; }
 .set-3 .btn{ padding:11px 6px; font-size:13px; gap:6px; justify-content:center; white-space:nowrap; }
 .set-3 .btn svg{ width:16px; height:16px; flex:none; }
 .set-row > div:first-child{ min-width:0; flex:1; }
+
+.imp-ids{ display:flex; gap:6px; margin-top:4px; }
+.imp-id{ flex:1; min-width:0; box-sizing:border-box; padding:5px 7px; border-radius:7px; border:1px solid var(--line); background:var(--card); color:var(--ink); font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12px; letter-spacing:.3px; outline:none; }
+.imp-id:focus{ border-color:var(--seal); }
 </style>
 </head>
 <body>
@@ -1736,10 +1740,21 @@ function parseApplicantText(text){
     if(boid) name = name.replace(new RegExp(boid,'i'),' ');
     name = name.replace(/\b(pan|bo\s?id|boid|demat|dp\s?id|client\s?id)\b/gi,' ')
                .replace(/[,;|\t:–—=]+/g,' ').replace(/\s-\s/g,' ').replace(/\s+/g,' ').trim();
-    if(!pan && !boid && (!name || /^name$/i.test(name))) return;       // blanks and CSV header rows
-    out.push({ name, pan, boid });
+    // leftover tokens that look like a damaged ID (digits mixed in, 6+ chars): keep them out of the name, show as a hint
+    const keep=[], odd=[];
+    name.split(' ').filter(Boolean).forEach(t=>{ if(/\d/.test(t) && t.replace(/[^A-Za-z0-9]/g,'').length>=6) odd.push(t); else keep.push(t); });
+    name = keep.join(' '); const unclear = odd.join(' ');
+    if(!pan && !boid && !unclear && (!name || /^name$/i.test(name))) return;       // blanks and CSV header rows
+    out.push({ name, pan, boid, unclear });
   });
-  return out;
+  // a name on one line and its ID alone on the next (common with wrapped/OCR'd lists): join them
+  const merged = [];
+  out.forEach(r=>{
+    const prev = merged[merged.length-1];
+    if(prev && prev.name && !prev.pan && !prev.boid && !prev.unclear && !r.name && (r.pan||r.boid||r.unclear)){ prev.pan=r.pan; prev.boid=r.boid; prev.unclear=r.unclear; }
+    else merged.push(r);
+  });
+  return merged;
 }
 
 
@@ -1767,6 +1782,14 @@ async function imageToCanvas(file){
   }
   g.putImageData(img,0,0);
   return c;
+}
+// Drop the icon junk OCR reads from checkboxes / drag handles at the start of a line, and placeholder rows
+function cleanOcrLines(text){
+  return String(text).split('\n').map(line=>{
+    let toks = line.replace(/[\[\]()|_{}<>¢©®™•·]/g,' ').trim().split(/\s+/).filter(Boolean);
+    while(toks.length>1 && (toks[0].length<=2 || /^[^A-Za-z]+$/.test(toks[0]))) toks.shift();   // e.g. "2", "J", "t"
+    return toks.join(' ');
+  }).filter(l=>l && !/^(list\s?item|title|add|note)$/i.test(l) && /[A-Za-z]{2,}|[0-9]{8,}/.test(l.replace(/\b\d{1,2}[:.]\d{2}\b/g,''))).join('\n');
 }
 // OCR often swaps look-alike characters (O/0, I/1, S/5…) and sometimes splits an ID with spaces;
 // repair anything that clearly has the shape of a PAN or BO ID.
@@ -1802,8 +1825,11 @@ async function fileToText(file, onProgress){
   if(file.type.startsWith('image/') || /\.(jpe?g|png|webp|heic|bmp)$/.test(name)){
     await loadScriptOnce('https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js');
     const canvas = await imageToCanvas(file);
-    const r = await Tesseract.recognize(canvas, 'eng', { logger: m=>{ if(onProgress && m.status) onProgress(m.status, m.progress); } });
-    return fixOcrIds(r.data.text || '');
+    const worker = await Tesseract.createWorker('eng', 1, { logger: m=>{ if(onProgress && m.status) onProgress(m.status, m.progress); } });
+    await worker.setParameters({ tessedit_char_whitelist:'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 ', tessedit_pageseg_mode:'6', preserve_interword_spaces:'1' });
+    const r = await worker.recognize(canvas); await worker.terminate();
+    const text = r.data.text || '';
+    return fixOcrIds(cleanOcrLines(text));
   }
   if(/\.(csv|txt)$/.test(name) || file.type.startsWith('text/')) return await file.text();
   if(/\.(xlsx|xls)$/.test(name)){
@@ -1852,9 +1878,10 @@ function openImportApplicantsModal(){
       <div style="display:flex;align-items:center;gap:8px;margin-top:8px;">
         <button class="btn sm ghost" id="imp-file-btn">${ICONS.upload} Choose file</button>
         <input type="file" id="imp-file" accept=".csv,.txt,.xlsx,.xls,.pdf,image/*,text/plain,text/csv,application/pdf" style="display:none;">
-        <span class="set-sub">CSV · Excel · PDF · text · photo</span>
+        <span class="set-sub">CSV · Excel · PDF · text · screenshot</span>
       </div>
       <div class="set-sub" id="imp-status" style="margin-top:6px;min-height:14px;"></div>
+      <div class="set-sub" style="margin-top:4px;">Most accurate: copy the list text (Keep → ⋮ → Send → Copy to Google Docs → copy from there) and paste. Screenshots can misread letters like O/0 — use a straight screenshot, not a photo of a screen.</div>
       <div class="modal-actions">
         <button class="btn ghost" data-close="1">Cancel</button>
         <button class="btn primary" id="imp-preview">Preview</button>
@@ -1898,6 +1925,7 @@ function openImportApplicantsModal(){
         else if(adds){ kind='update'; note='Adds missing ID'; on=true; }
         else { kind='skip'; note='Already added'; on=false; }
       } else if(!p.pan && !p.boid){ note='New · no ID'; }
+      if(fromOcr && !p.pan && !p.boid && kind==='new'){ on=false; note=p.unclear?'ID unclear — fix below':'No ID found'; }
       return { ...p, ex, kind, note, on };
     });
   }
@@ -1915,7 +1943,11 @@ function openImportApplicantsModal(){
           <input type="checkbox" data-imp-on="${i}" ${r.on?'checked':''} ${r.kind==='skip'&&r.note==='Already added'?'disabled':''} style="width:18px;height:18px;flex:none;">
           <div class="al-main">
             <input type="text" data-imp-name="${i}" value="${esc(r.name)}" placeholder="Name" style="width:100%;box-sizing:border-box;background:none;border:none;border-bottom:1px dashed var(--line);color:var(--ink);font-family:inherit;font-size:13.5px;font-weight:600;padding:2px 0;outline:none;">
-            <div class="al-meta tabular">${r.pan?esc(r.pan):'<span style="color:var(--ink-faint)">no PAN</span>'} · ${r.boid?esc(r.boid):'<span style="color:var(--ink-faint)">no BO ID</span>'}</div>
+            <div class="imp-ids">
+              <input type="text" data-imp-pan="${i}" value="${esc(r.pan)}" placeholder="PAN" maxlength="10" autocapitalize="characters" class="imp-id">
+              <input type="text" data-imp-bo="${i}" value="${esc(r.boid)}" placeholder="BO ID" maxlength="16" autocapitalize="characters" class="imp-id">
+            </div>
+            ${r.unclear ? `<div class="set-sub" style="color:var(--gold);">Couldn’t read cleanly: “${esc(r.unclear)}” — check against the original</div>` : ''}
           </div>
           <span class="gmptag" style="color:${r.kind==='new'?'var(--green)':r.kind==='update'?'var(--gold)':'var(--ink-faint)'};border-color:currentColor;white-space:nowrap;">${esc(r.note)}</span>
         </div>`).join('')}
@@ -1925,8 +1957,21 @@ function openImportApplicantsModal(){
       </div>`;
     m.querySelectorAll('[data-imp-on]').forEach(el=>el.addEventListener('change',()=>{ rows[+el.dataset.impOn].on = el.checked; const b=document.getElementById('imp-save'); b.textContent='Add '+rows.filter(r=>r.on).length+' selected'; }));
     m.querySelectorAll('[data-imp-name]').forEach(el=>el.addEventListener('input',()=>{ rows[+el.dataset.impName].name = el.value; }));
+    const PANRE=/^[A-Z]{5}[0-9]{4}[A-Z]$/, BORE=/^(?:IN[0-9]{14}|[0-9]{16})$/;
+    const paint = (el,ok)=>{ el.style.borderColor = ok ? 'var(--line)' : 'var(--rust)'; };
+    m.querySelectorAll('[data-imp-pan]').forEach(el=>{
+      const chk=()=>{ el.value=el.value.toUpperCase().replace(/\s+/g,''); rows[+el.dataset.impPan].pan=el.value; paint(el, !el.value || PANRE.test(el.value)); };
+      el.addEventListener('input',chk); chk();
+    });
+    m.querySelectorAll('[data-imp-bo]').forEach(el=>{
+      const chk=()=>{ el.value=el.value.toUpperCase().replace(/\s+/g,''); rows[+el.dataset.impBo].boid=el.value; paint(el, !el.value || BORE.test(el.value)); };
+      el.addEventListener('input',chk); chk();
+    });
     document.getElementById('imp-back').addEventListener('click',()=>stepInput(rows.map(r=>[r.name,r.pan,r.boid].filter(Boolean).join(' ')).join('\n')));
     document.getElementById('imp-save').addEventListener('click', async ()=>{
+      const bad = rows.filter(r=>r.on && ((r.pan && !/^[A-Z]{5}[0-9]{4}[A-Z]$/.test(r.pan)) || (r.boid && !/^(?:IN[0-9]{14}|[0-9]{16})$/.test(r.boid))));
+      if(bad.length){ toast(`Fix the red IDs first (${bad.length}) — or untick those people`); return; }
+      if(rows.some(r=>r.on && !(r.name||'').trim())){ toast('Some ticked rows have no name — type one or untick them'); return; }
       let added=0, updated=0;
       for(const r of rows){
         if(!r.on) continue;
