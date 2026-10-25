@@ -39,7 +39,7 @@ function idbAll(db, store){
   });
 }
 
-function todayStr(){ return new Date().toISOString().slice(0,10); }
+function todayStr(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
 function daysDiff(dateStr){
   if(!dateStr) return null;
   const today = new Date(todayStr()+'T00:00:00');
@@ -67,7 +67,7 @@ async function checkAndNotify(){
   const toNotify = [];
   for(const ipo of ipos){
     const closeD = daysDiff(ipo.closeDate);
-    const allotD = daysDiff(ipo.allotmentDate);
+    const allotD = daysDiff(ipo.allotmentDate || ipo.allotmentDateTentative);
     if(closeD === 0){
       const gmpTag = ipo.gmpPercent != null ? ` (GMP ${Number(ipo.gmpPercent)>0?'+':''}${ipo.gmpPercent}%)` : '';
       const key = `close:${ipo.id}:${todayStr()}`;
@@ -109,4 +109,14 @@ self.addEventListener('message', (event) => {
   if(event.data === 'check-now'){
     event.waitUntil(checkAndNotify());
   }
+});
+
+// Tapping a notification opens (or focuses) the app on the Applications tab, where the results buttons are
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  event.waitUntil((async () => {
+    const all = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    for (const c of all) { if ('focus' in c) { c.focus(); return; } }
+    if (self.clients.openWindow) await self.clients.openWindow('./#applications');
+  })());
 });
