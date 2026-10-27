@@ -364,6 +364,15 @@ a.link:hover{ text-decoration:underline; }
 .ob-dot{ width:20px; height:20px; border-radius:50%; border:1.5px solid var(--ink-faint); display:inline-flex; align-items:center; justify-content:center; font-size:12px; flex:none; color:var(--green); border-color:var(--ink-faint); }
 .ob-step.done .ob-dot{ border-color:var(--green); }
 .ob-arrow{ margin-left:auto; color:var(--ink-faint); }
+
+/* --- v11: categories + partial allotment --- */
+.al-links{ display:flex; flex-wrap:wrap; gap:2px 12px; margin-top:4px; }
+.al-link{ background:none; border:none; padding:0; color:var(--seal); font-size:11.5px; font-weight:600; cursor:pointer; font-family:inherit; }
+.al-cat{ font-size:9.5px; font-weight:800; text-transform:uppercase; letter-spacing:.4px; color:var(--gold); border:1px solid var(--gold); border-radius:5px; padding:0 5px; margin-left:6px; vertical-align:middle; }
+.al-edit{ border:1px solid var(--seal); border-radius:12px; padding:12px; margin:8px 0; }
+button.chip{ background:none; cursor:pointer; font-family:inherit; color:var(--ink-dim); }
+.sp-row{ display:flex; align-items:center; gap:8px; margin:6px 0; }
+.sel-sm{ flex:1; min-width:0; padding:8px; border-radius:8px; border:1px solid var(--line); background:var(--card); color:var(--ink); font-family:inherit; font-size:13.5px; }
 </style>
 </head>
 <body>
@@ -746,6 +755,14 @@ async function removeDemoData(){
     for(const o of State[key].filter(x=>x.demo || isDemo(x.id))){ await idbDelete(store, o.id); }
   }
   await loadAll();
+}
+const CATEGORIES = [['retail','Retail'],['shareholder','Shareholder'],['employee','Employee'],['hni','HNI / NII']];
+function catName(k){ const c=CATEGORIES.find(x=>x[0]===k); return c?c[1]:'Retail'; }
+function ipoPricePerShare(ipo){ return Number(ipo.maxPrice) || parseMaxPriceFromBand(ipo.priceBand) || 0; }
+function catTag(a){                         // shown only when it tells you something: non-retail, or the same person applied in more than one category
+  const k = a.category || 'retail';
+  const multi = State.applications.filter(x=>x.ipoId===a.ipoId && x.applicantId===a.applicantId).length>1;
+  return (k!=='retail' || multi) ? `<span class="al-cat">${esc(catName(k))}</span>` : '';
 }
 function allotmentId(applicant){
   if(!applicant) return null;
@@ -1269,7 +1286,7 @@ function renderApply(main){
         <div class="sub">${ipoStatus(i).label} · ${fmtDate(i.openDate)}–${fmtDate(i.closeDate)}</div>
       </div>`).join('')}</div>`;
     dropdown.querySelectorAll('[data-pick]').forEach(el=>el.addEventListener('click',()=>{
-      flow.ipoId = el.dataset.pick; flow.bankId=null; flow.selected=new Map();
+      flow.ipoId = el.dataset.pick; flow.bankId=null; flow.selected=new Map(); flow.category='retail';
       closeDropdown();
       searchInput.value = ipoById(flow.ipoId).name;
       renderApplyDetails();
@@ -1344,7 +1361,7 @@ function renderApply(main){
     // "Same as last time": last bank + applicants you applied with, minus anyone already applied to this IPO
     const last = lsGet('ipoledger_lastapply', null);
     if(last && flow.selected.size===0 && bankById(last.bankId)){
-      const already = new Set(State.applications.filter(a=>a.ipoId===ipo.id).map(a=>a.applicantId));
+      const already = new Set(State.applications.filter(a=>a.ipoId===ipo.id && (a.category||'retail')===(flow.category||'retail')).map(a=>a.applicantId));
       const minL = Math.max(1, Number(ipo.minLots)||1);
       const who = (last.people||[]).filter(pp=>applicantById(pp.id) && !already.has(pp.id));
       if(who.length){
@@ -1365,7 +1382,8 @@ function renderApply(main){
     const bank = bankById(flow.bankId);
     const avail = bankAvailable(bank.id);
     const blocked = bankBlocked(bank.id);
-    const existingApps = State.applications.filter(a=>a.ipoId===ipo.id);
+    const cat = flow.category || 'retail';
+    const existingApps = State.applications.filter(a=>a.ipoId===ipo.id && (a.category||'retail')===cat);   // same person may apply once per category
 
     if(State.applicants.length===0){
       applicantSlot.innerHTML = `<div class="section-label">Select applicants</div><div class="empty-state"><div class="t">No applicants yet</div><div class="s">Add applicants first.</div></div>`;
@@ -1380,6 +1398,7 @@ function renderApply(main){
         <div class="section-label" style="margin:0;">${esc(bank.name)}</div>
         <div style="font-size:12px;color:var(--ink-faint);" class="tabular">Available ${fmtMoney(avail)} · Blocked ${fmtMoney(blocked)}</div>
       </div>
+      <div class="pill-tabs" style="margin:10px 0 8px;" id="cat-tabs">${CATEGORIES.map(([k,l])=>`<button data-cat="${k}" class="${cat===k?'active':''}">${l}</button>`).join('')}</div>
       ${minLots>1?`<div style="font-size:12px;color:var(--gold);margin-bottom:8px;">This is an SME IPO — minimum ${minLots} lots per application.</div>`:''}
       <div class="card" style="padding:6px 12px;">
         ${State.applicants.map(a=>{
@@ -1402,6 +1421,7 @@ function renderApply(main){
       </div>
       <div id="apply-summary"></div>
     `;
+    applicantSlot.querySelectorAll('[data-cat]').forEach(b=>b.addEventListener('click',()=>{ flow.category=b.dataset.cat; flow.selected=new Map(); renderApplyDetails(); }));
     applicantSlot.querySelectorAll('[data-tick]').forEach(el=>el.addEventListener('click',()=>{
       const id = el.dataset.tick;
       if(flow.selected.has(id)) flow.selected.delete(id); else flow.selected.set(id, minLots);
@@ -1452,7 +1472,7 @@ async function markSelectedApplied(ipo, bank, lotAmt){
     totalAmount += amount;
     const app = {
       id: uid(), ipoId: ipo.id, applicantId, bankId: bank.id,
-      lots, amount, appliedDate: todayStr(),
+      lots, amount, appliedDate: todayStr(), category: flow.category || 'retail',
       allotmentStatus: 'pending', // pending | not_allotted | allotted
       allottedAmount: 0, refundedAmount: 0, refundDate: null,
     };
@@ -1499,7 +1519,7 @@ function renderApplications(main){
     return `<div class="list-item">
       <div class="main" style="cursor:pointer;flex:1;" data-open-ipo="${a.ipoId}">
         <div class="title">${esc(applicant?applicant.name:'Unknown')}</div>
-        <div class="meta tabular">${fmtDate(a.appliedDate)} · ${a.lots?a.lots+' lot'+(a.lots>1?'s':'')+' · ':''}${fmtMoney(a.amount)}</div>
+        <div class="meta tabular">${fmtDate(a.appliedDate)} · ${a.lots?a.lots+' lot'+(a.lots>1?'s':'')+' · ':''}${fmtMoney(a.amount)}${catTag(a)}</div>
       </div>
       ${allotmentBadge(a)}
       <div class="actions">
@@ -2106,7 +2126,7 @@ function renderApplicantDetail(applicantId){
   `;
 }
 function allotmentBadge(a){
-  const map = {pending:['closing','Pending'], not_allotted:['closed','Not allotted — refunded'], allotted:['listed','Allotted']};
+  const map = {pending:['closing','Pending'], not_allotted:['closed','Not allotted — refunded'], allotted:['listed', (a.refundedAmount||0)>0 ? 'Part allotted' : 'Allotted']};
   const [cls,label] = map[a.allotmentStatus]||['closed','Pending'];
   return `<span class="badge ${cls}">${label}</span>`;
 }
@@ -2905,38 +2925,86 @@ function openAllotmentModal(ipoId){
   const ipo = ipoById(ipoId);
   const nm = (a)=>((applicantById(a.applicantId)||{}).name||'');
   const bn = (a)=>((bankById(a.bankId)||{}).name||'');
+  const lotSize = Number(ipo.lotSize)||0;
+  const price = ipoPricePerShare(ipo);
+  const totalShares = (a)=> lotSize ? (a.lots||0)*lotSize : 0;
+  const r2 = (n)=>Math.round(n*100)/100;
   let doneOpen = false;
+  let editing = null;                         // { id, mode:'partial' | 'split' }
+  const hook = ()=>{ State._onModalClose = ()=>{ const y=window.scrollY; render(); window.scrollTo(0,y); }; };
+
+  const linksFor = (a, withCheck)=>`<div class="al-links">
+      ${withCheck ? `<button class="al-link" data-check-allotment="${a.id}">Check allotment ↗</button>` : ''}
+      <button class="al-link" data-edit-id="${a.id}" data-edit-mode="partial">${withCheck?'Part allotted…':'Edit shares'}</button>
+      ${(a.lots||0)>1 ? `<button class="al-link" data-edit-id="${a.id}" data-edit-mode="split">Split by category</button>` : ''}
+    </div>`;
 
   const pendingRow = (a)=>{
     const applicant = applicantById(a.applicantId);
     return `<div class="al-row" data-swipe="${a.id}">
       <div class="al-main">
-        <div class="al-name">${esc(applicant?applicant.name:'—')}</div>
-        <div class="al-meta tabular">${a.lots?a.lots+' lot'+(a.lots>1?'s':'')+' · ':''}${fmtMoney(a.amount)}</div>
+        <div class="al-name">${esc(applicant?applicant.name:'—')}${catTag(a)}</div>
+        <div class="al-meta tabular">${a.lots?a.lots+' lot'+(a.lots>1?'s':'')+' · ':''}${totalShares(a)?totalShares(a)+' sh · ':''}${fmtMoney(a.amount)}</div>
+        ${linksFor(a, true)}
       </div>
-      <button class="btn sm ghost al-icon" data-check-allotment="${a.id}" title="Check allotment${allotmentId(applicant)?' (copies '+allotmentId(applicant).label+')':''}">${ICONS.external}</button>
       <button class="btn sm ghost" data-set-status="${a.id}" data-status="not_allotted">Not allotted</button>
       <button class="btn sm primary" data-set-status="${a.id}" data-status="allotted">Allotted</button>
     </div>`;
   };
   const doneRow = (a)=>{
     const ok = a.allotmentStatus==='allotted';
+    const part = ok && (a.refundedAmount||0)>0;
+    const line = !ok ? 'Not allotted · refunded '+fmtMoney(a.refundedAmount||0)
+      : part ? `Allotted ${a.allottedShares!=null?a.allottedShares+' sh · ':''}${fmtMoney(a.allottedAmount||0)} · refund ${fmtMoney(a.refundedAmount||0)}`
+      : 'Allotted · '+fmtMoney(a.allottedAmount||0);
     return `<div class="al-row">
       <div class="al-main">
-        <div class="al-name">${esc(nm(a))} <span style="font-weight:500;color:var(--ink-faint);font-size:11.5px;">· ${esc(bn(a))}</span></div>
-        <div class="al-meta tabular">${ok?'Allotted · '+fmtMoney(a.allottedAmount||0):'Not allotted · refunded '+fmtMoney(a.refundedAmount||0)}</div>
+        <div class="al-name">${esc(nm(a))}${catTag(a)} <span style="font-weight:500;color:var(--ink-faint);font-size:11.5px;">· ${esc(bn(a))}</span></div>
+        <div class="al-meta tabular">${line}</div>
+        <div class="al-links"><button class="al-link" data-edit-id="${a.id}" data-edit-mode="partial">Edit shares</button>${(a.lots||0)>1?`<button class="al-link" data-edit-id="${a.id}" data-edit-mode="split">Split by category</button>`:''}</div>
       </div>
       <button class="btn sm ghost" data-set-status="${a.id}" data-status="pending">Undo</button>
     </div>`;
   };
 
+  function editorHtml(a){
+    const applicant = applicantById(a.applicantId);
+    const head = `<div class="al-name">${esc(applicant?applicant.name:'—')}${catTag(a)}</div>
+      <div class="al-meta tabular">Applied ${a.lots} lot${a.lots>1?'s':''}${totalShares(a)?' = '+totalShares(a)+' shares':''} · ${fmtMoney(a.amount)}${price?' · ₹'+price+'/share':''}</div>`;
+    if(editing.mode==='split'){
+      const L = a.lots||0, catA = a.category||'retail', catB = catA==='shareholder' ? 'retail' : 'shareholder';
+      const opts = (sel)=>CATEGORIES.map(([k,l])=>`<option value="${k}" ${k===sel?'selected':''}>${l}</option>`).join('');
+      return `<div class="al-edit">${head}
+        <div class="set-sub" style="margin:6px 0 8px;">Split these ${L} lots into two applications, one per category, so each result is recorded on its own. Both parts go back to pending.</div>
+        <div class="sp-row"><select id="sp-cat-a" class="sel-sm">${opts(catA)}</select><input type="number" id="sp-lots-a" class="num-sm" value="1" min="1" max="${L-1}" inputmode="numeric"><span class="set-sub">lots</span></div>
+        <div class="sp-row"><select id="sp-cat-b" class="sel-sm">${opts(catB)}</select><input type="number" id="sp-lots-b" class="num-sm" value="${L-1}" readonly><span class="set-sub">lots</span></div>
+        <div class="modal-actions"><button class="btn ghost" id="ae-cancel">Cancel</button><button class="btn primary" id="ae-save">Split</button></div>
+      </div>`;
+    }
+    const total = totalShares(a);
+    const cur = a.allottedShares!=null ? a.allottedShares : '';
+    return `<div class="al-edit">${head}
+      ${price ? '' : `<label class="field" style="margin-top:8px;">Issue price per share (₹)<input type="number" id="ae-price" inputmode="decimal" placeholder="e.g. 150"></label>`}
+      <label class="field" style="margin-top:8px;">Shares allotted<input type="number" id="ae-shares" inputmode="numeric" min="0" ${total?`max="${total}"`:''} value="${cur}" placeholder="e.g. 23"></label>
+      <div class="chips-row" style="margin:8px 0 2px;">
+        ${lotSize ? `<button class="chip" data-ae-fill="${lotSize}">1 lot (${lotSize})</button>` : ''}
+        ${total ? `<button class="chip" data-ae-fill="${total}">All (${total})</button>` : ''}
+        <button class="chip" data-ae-fill="0">None</button>
+      </div>
+      <div class="set-sub tabular" id="ae-calc" style="min-height:16px;"></div>
+      <div class="modal-actions"><button class="btn ghost" id="ae-cancel">Cancel</button><button class="btn primary" id="ae-save">Save result</button></div>
+    </div>`;
+  }
+
   function body(){
-    const apps = ipoApplications(ipoId).slice().sort((x,y)=>bankPos(x.bankId)-bankPos(y.bankId)||applicantPos(x.applicantId)-applicantPos(y.applicantId));
+    const catRank = (a)=>CATEGORIES.findIndex(c=>c[0]===(a.category||'retail'));
+    const apps = ipoApplications(ipoId).slice().sort((x,y)=>bankPos(x.bankId)-bankPos(y.bankId)||applicantPos(x.applicantId)-applicantPos(y.applicantId)||catRank(x)-catRank(y));
     const pend = apps.filter(a=>a.allotmentStatus==='pending');
     const done = apps.filter(a=>a.allotmentStatus!=='pending');
     const byBank = {};
     pend.forEach(a=>{ (byBank[a.bankId]=byBank[a.bankId]||[]).push(a); });
-    const refunded = done.filter(a=>a.allotmentStatus==='not_allotted').reduce((t,a)=>t+(a.refundedAmount||0),0);
+    const refunded = done.reduce((t,a)=>t+(a.refundedAmount||0),0);
+    const show = (a,fn)=> (editing && editing.id===a.id) ? editorHtml(a) : fn(a);
     return `
       <div class="row" style="margin-bottom:2px;">
         <h3 style="margin:0;">${esc(ipo.name)}</h3>
@@ -2950,12 +3018,12 @@ function openAllotmentModal(ipoId){
       ${apps.length>0 && pend.length===0 ? `<div class="meta" style="text-align:center;padding:18px 0;color:var(--ink-faint);font-size:13px;">All results marked ✓</div>` : ''}
       ${Object.keys(byBank).sort((x,y)=>bankPos(x)-bankPos(y)).map(bid=>`
         <div class="al-bank">${esc((bankById(bid)||{}).name||'—')}</div>
-        ${byBank[bid].map(pendingRow).join('')}
+        ${byBank[bid].map(a=>show(a,pendingRow)).join('')}
       `).join('')}
       ${done.length ? `
         <details class="al-done" ${doneOpen?'open':''}>
           <summary>Done (${done.length})${refunded?` · ${fmtMoney(refunded)} refunded`:''}</summary>
-          ${done.map(doneRow).join('')}
+          ${done.map(a=>show(a,doneRow)).join('')}
         </details>` : ''}
     `;
   }
@@ -2964,8 +3032,17 @@ function openAllotmentModal(ipoId){
   history.pushState({ route:State.route, nav: State.route==='applications' ? { ipoId:State.appNav.ipoId, bankId:State.appNav.bankId } : undefined, modal:true }, '', '#'+State.route);
   const el = document.getElementById('allot-modal');
 
+  function snapshot(app){ return { allotmentStatus:app.allotmentStatus, allottedAmount:app.allottedAmount, refundedAmount:app.refundedAmount, refundDate:app.refundDate, allottedShares:app.allottedShares }; }
+  function undoToast(app, prev, text){
+    toast(text, { ms:5000, action:{ label:'Undo', fn: async ()=>{
+      Object.keys(prev).forEach(k=>{ if(prev[k]===undefined) delete app[k]; else app[k]=prev[k]; });
+      await idbPut('applications', app); paint(); hook();
+    } } });
+  }
+
   function paint(){
     const top = el.scrollTop;                 // keep the user's place in the list
+    if(editing){ const ea = State.applications.find(x=>x.id===editing.id); if(ea && ea.allotmentStatus!=='pending') doneOpen = true; }
     el.innerHTML = body();
     el.scrollTop = top;
     const det = el.querySelector('.al-done');
@@ -2987,6 +3064,56 @@ function openAllotmentModal(ipoId){
     }));
 
     el.querySelectorAll('[data-set-status]').forEach(btn=>btn.addEventListener('click', ()=>applyStatus(btn.dataset.setStatus, btn.dataset.status)));
+    el.querySelectorAll('[data-edit-id]').forEach(btn=>btn.addEventListener('click', ()=>{ editing = { id:btn.dataset.editId, mode:btn.dataset.editMode }; paint();
+      const f = el.querySelector('#ae-shares, #sp-lots-a'); if(f && f.scrollIntoView){ f.scrollIntoView({block:'center'}); } }));
+
+    if(editing){
+      const app = State.applications.find(x=>x.id===editing.id);
+      const cancel = document.getElementById('ae-cancel'); if(cancel) cancel.addEventListener('click', ()=>{ editing=null; paint(); });
+      if(app && editing.mode==='partial'){
+        const sh = document.getElementById('ae-shares'), pr = document.getElementById('ae-price'), calc = document.getElementById('ae-calc');
+        const total = totalShares(app);
+        const upd = ()=>{
+          const n = Number(sh.value), p = price || Number(pr&&pr.value) || 0;
+          if(sh.value==='' ){ calc.textContent=''; return; }
+          if(isNaN(n) || n<0 || (total && n>total)){ calc.style.color='var(--rust)'; calc.textContent = total ? `Enter 0 to ${total} shares` : 'Enter a valid number'; return; }
+          calc.style.color='var(--ink-faint)';
+          if(!p){ calc.textContent='Enter the issue price to see amounts'; return; }
+          const al = Math.min(r2(n*p), app.amount||0);
+          calc.textContent = `₹${al.toLocaleString('en-IN')} allotted · ₹${r2((app.amount||0)-al).toLocaleString('en-IN')} refund`;
+        };
+        sh.addEventListener('input', upd); if(pr) pr.addEventListener('input', upd);
+        el.querySelectorAll('[data-ae-fill]').forEach(b=>b.addEventListener('click', ()=>{ sh.value = b.dataset.aeFill; upd(); }));
+        upd();
+        document.getElementById('ae-save').addEventListener('click', async ()=>{
+          const n = Number(sh.value), p = price || Number(pr&&pr.value) || 0, total2 = totalShares(app);
+          if(sh.value==='' || isNaN(n) || n<0 || (total2 && n>total2)){ toast(total2 ? `Enter 0 to ${total2} shares` : 'Enter the shares allotted'); return; }
+          if(!p){ toast('Enter the issue price per share'); return; }
+          const prev = snapshot(app), amt = app.amount||0, al = Math.min(r2(n*p), amt);
+          app.allotmentStatus = n===0 ? 'not_allotted' : 'allotted';
+          app.allottedShares = n; app.allottedAmount = al; app.refundedAmount = r2(amt-al);
+          app.refundDate = app.refundedAmount>0 ? (app.refundDate || todayStr()) : null;
+          await idbPut('applications', app);
+          editing = null; paint(); hook();
+          undoToast(app, prev, `${nm(app)}: ${n} share${n===1?'':'s'} allotted`);
+        });
+      }
+      if(app && editing.mode==='split'){
+        const L = app.lots||0, la = document.getElementById('sp-lots-a'), lb = document.getElementById('sp-lots-b');
+        la.addEventListener('input', ()=>{ lb.value = L - (parseInt(la.value)||0); });
+        document.getElementById('ae-save').addEventListener('click', async ()=>{
+          const x = parseInt(la.value);
+          if(!(x>=1 && x<L)){ toast(`Part A must be between 1 and ${L-1} lots`); return; }
+          const perLot = (app.amount||0)/L, catA = document.getElementById('sp-cat-a').value, catB = document.getElementById('sp-cat-b').value;
+          const second = { ...app, id: uid(), lots: L-x, amount: r2(perLot*(L-x)), category: catB };
+          app.lots = x; app.amount = r2(perLot*x); app.category = catA;
+          for(const o of [app, second]){ o.allotmentStatus='pending'; o.allottedAmount=0; o.refundedAmount=0; o.refundDate=null; delete o.allottedShares; }
+          await idbPut('applications', app); await idbPut('applications', second); State.applications.push(second);
+          editing = null; paint(); hook();
+          toast(`Split into ${x} + ${L-x} lots — now enter each result`);
+        });
+      }
+    }
 
     // Swipe a pending row: right = Allotted, left = Not allotted
     el.querySelectorAll('.al-row[data-swipe]').forEach(row=>{
@@ -3009,29 +3136,23 @@ function openAllotmentModal(ipoId){
   }
 
   async function applyStatus(appId, status){
-    {
-      const app = State.applications.find(x=>x.id===appId);
-      if(!app) return;
-      const prev = { allotmentStatus:app.allotmentStatus, allottedAmount:app.allottedAmount, refundedAmount:app.refundedAmount, refundDate:app.refundDate };
-      app.allotmentStatus = status;
-      if(status==='not_allotted'){
-        app.allottedAmount = 0; app.refundedAmount = app.amount||0; app.refundDate = app.refundDate || todayStr();
-      } else if(status==='allotted'){
-        app.allottedAmount = app.amount||0; app.refundedAmount = 0; app.refundDate = null;
-      } else {                                  // undo -> back to pending
-        app.allottedAmount = 0; app.refundedAmount = 0; app.refundDate = null;
-      }
-      await idbPut('applications', app);
-      paint();      // redraw only the modal body: no animation, scroll position kept
-      State._onModalClose = ()=>{ const y=window.scrollY; render(); window.scrollTo(0,y); };  // refresh page behind it once, on close
-      if(status!=='pending'){
-        const who = (applicantById(app.applicantId)||{}).name || 'Result';
-        toast(`${who}: ${status==='allotted'?'allotted':'not allotted'}`, { ms:5000, action:{ label:'Undo', fn: async ()=>{
-          Object.assign(app, prev); await idbPut('applications', app); paint();
-          State._onModalClose = ()=>{ const y=window.scrollY; render(); window.scrollTo(0,y); };
-        } } });
-      }
+    const app = State.applications.find(x=>x.id===appId);
+    if(!app) return;
+    const prev = snapshot(app);
+    app.allotmentStatus = status;
+    if(status==='not_allotted'){
+      app.allottedAmount = 0; app.refundedAmount = app.amount||0; app.refundDate = app.refundDate || todayStr(); app.allottedShares = 0;
+    } else if(status==='allotted'){
+      app.allottedAmount = app.amount||0; app.refundedAmount = 0; app.refundDate = null;
+      if(totalShares(app)) app.allottedShares = totalShares(app); else delete app.allottedShares;
+    } else {                                  // undo -> back to pending
+      app.allottedAmount = 0; app.refundedAmount = 0; app.refundDate = null; delete app.allottedShares;
     }
+    await idbPut('applications', app);
+    editing = null;
+    paint();      // redraw only the modal body: no animation, scroll position kept
+    hook();       // refresh the page behind it once, on close
+    if(status!=='pending') undoToast(app, prev, `${nm(app)}: ${status==='allotted'?'allotted':'not allotted'}`);
   }
   paint();
 }
