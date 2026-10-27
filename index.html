@@ -392,7 +392,7 @@ button.chip{ background:none; cursor:pointer; font-family:inherit; color:var(--i
    ========================================================= */
 
 /* ---------- ICONS (tiny inline svg set) ---------- */
-const APP_VERSION = '1.3';
+const APP_VERSION = '1.4';
 const ICONS = {
   back: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>`,
   list: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 6h13M8 12h13M8 18h13"/><path d="M3 6h.01M3 12h.01M3 18h.01"/></svg>`,
@@ -2158,6 +2158,15 @@ function isoToDate(s){
   return d.toISOString().slice(0,10);
 }
 
+async function pruneOldIpos(){
+  // Remove stored IPOs that are old news AND have nothing of yours attached (no applications)
+  const used = new Set(State.applications.map(a=>a.ipoId));
+  const old = State.ipos.filter(i=>!i.demo && !used.has(i.id) && !isRecentIpo(i,false));
+  for(const i of old){ await idbDelete('ipos', i.id); }
+  const ids = new Set(old.map(i=>i.id));
+  State.ipos = State.ipos.filter(i=>!ids.has(i.id));
+  return old.length;
+}
 async function syncLiveIpos(silent){
   const btn = document.getElementById('sync-ipos-btn');
   if(btn){ btn.disabled = true; btn.textContent = 'Syncing…'; }
@@ -2166,11 +2175,12 @@ async function syncLiveIpos(silent){
     if(!res.ok) throw new Error('Fetch failed: '+res.status);
     const data = await res.json();
     const feed = Array.isArray(data.ipos) ? data.ipos : [];
-    let added=0, updated=0;
+    let added=0, updated=0, skippedOld=0;
     for(const item of feed){
       if(!item.name) continue;
       const itemKey = normalizeIpoName(item.name);
       const existing = State.ipos.find(i=> normalizeIpoName(i.name)===itemKey );
+      if(!existing && !isRecentIpo({ closeDate:isoToDate(item.closeDate), listingDate:isoToDate(item.listingDate), listingDateTentative:isoToDate(item.listingDateTentative) }, false)){ skippedOld++; continue; }   // feed lists old IPOs too — don't store them
       const obj = existing || { id: uid() };
       obj.name = item.name;
       obj.company = item.company || obj.company || '';
@@ -2217,6 +2227,7 @@ async function syncLiveIpos(silent){
     // manual "Find & merge" button in Settings.
     const smeTagged = await autoDetectSmeIposSilently();
     const dupeResult = await autoMergeDuplicateIposSilently();
+    const pruned = await pruneOldIpos();
     // A silent (automatic, background) sync only shows a toast if it
     // actually changed something — otherwise it'd produce a "Synced: 0
     // added, 0 updated" toast every single morning even when nothing is
@@ -2224,6 +2235,7 @@ async function syncLiveIpos(silent){
     const extras = [];
     if(smeTagged>0) extras.push(`${smeTagged} tagged SME`);
     if(dupeResult.merged>0) extras.push(`${dupeResult.merged} duplicate(s) merged`);
+    if(pruned>0) extras.push(`${pruned} old cleared`);
     if(!silent || added>0 || updated>0 || extras.length>0){
       toast(`Synced: ${added} added, ${updated} updated${extras.length?' · '+extras.join(', '):''}`);
     }
@@ -3252,6 +3264,10 @@ function renderSettings(main){
         <div><div class="set-label">Tag SME IPOs</div><div class="set-sub">Marks older IPOs with “SME” in the name as SME</div></div>
         <button class="btn sm ghost" id="s-fix-sme">Run</button>
       </div>
+      <div class="set-row">
+        <div><div class="set-label">Clear old IPOs</div><div class="set-sub">Deletes stored IPOs that closed long ago and have none of your applications</div></div>
+        <button class="btn sm ghost" id="s-prune-ipos">Run</button>
+      </div>
       <div class="set-row" style="border-bottom:none;">
         <div><div class="set-label">Merge duplicate IPOs</div><div class="set-sub">Combines entries like “Co (India) IPO” and “Co IPO”</div></div>
         <button class="btn sm ghost" id="s-merge-dupes">Run</button>
@@ -3278,6 +3294,7 @@ function renderSettings(main){
   document.getElementById('s-import').addEventListener('click', triggerImport);
   document.getElementById('s-fix-sme').addEventListener('click', autoDetectSmeIpos);
   document.getElementById('s-merge-dupes').addEventListener('click', mergeDuplicateIpos);
+  document.getElementById('s-prune-ipos').addEventListener('click', async ()=>{ const n = await pruneOldIpos(); toast(n ? `Cleared ${n} old IPO${n>1?'s':''}` : 'Nothing old to clear'); });
   const settingsSignIn = document.getElementById('settings-signin-btn');
   if(settingsSignIn) settingsSignIn.addEventListener('click', signInWithGoogle);
   const settingsSignOut = document.getElementById('settings-signout-btn');
