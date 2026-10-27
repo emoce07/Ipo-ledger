@@ -392,7 +392,7 @@ button.chip{ background:none; cursor:pointer; font-family:inherit; color:var(--i
    ========================================================= */
 
 /* ---------- ICONS (tiny inline svg set) ---------- */
-const APP_VERSION = '1.4';
+const APP_VERSION = '1.6';
 const ICONS = {
   back: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>`,
   list: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 6h13M8 12h13M8 18h13"/><path d="M3 6h.01M3 12h.01M3 18h.01"/></svg>`,
@@ -646,6 +646,7 @@ async function cloudPullAll(){
       for(const doc of localOnly) await cloudPut(store, doc);
     }
     await loadAll();
+    try{ await pruneOldIpos(); }catch(e){ console.warn('Old-IPO cleanup skipped', e); }   // also deletes them from the cloud copy
     State.lastCloudSync = { ok: true, at: new Date().toISOString() };
   }catch(e){
     console.error('Cloud pull failed', e);
@@ -772,6 +773,8 @@ function catTag(a){                         // shown only when it tells you some
 }
 function isRecentIpo(ipo, hasPending, now){
   if(hasPending) return true;                                   // you still have a result to enter
+  const norm = (d)=>{ if(!d) return ''; if(/^\d{4}-\d{2}-\d{2}$/.test(d)) return d; const x=new Date(d); return isNaN(x) ? '' : x.getFullYear()+'-'+String(x.getMonth()+1).padStart(2,'0')+'-'+String(x.getDate()).padStart(2,'0'); };
+  ipo = { ...ipo, closeDate:norm(ipo.closeDate), listingDate:norm(ipo.listingDate), listingDateTentative:norm(ipo.listingDateTentative) };
   const day = (n)=>{ const d=new Date(now||Date.now()); d.setDate(d.getDate()-n); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); };
   if(ipo.closeDate && ipo.closeDate < day(12)) return false;     // closed long ago, whatever the listing date says
   const listing = ipo.listingDate || ipo.listingDateTentative;
@@ -2158,6 +2161,11 @@ function isoToDate(s){
   return d.toISOString().slice(0,10);
 }
 
+async function reloadLatestVersion(){
+  try{ const regs = await navigator.serviceWorker.getRegistrations(); for(const r of regs) await r.unregister(); }catch(e){}
+  try{ const keys = await caches.keys(); for(const k of keys) await caches.delete(k); }catch(e){}
+  location.replace(location.pathname + '?v=' + Date.now() + location.hash);
+}
 async function pruneOldIpos(){
   // Remove stored IPOs that are old news AND have nothing of yours attached (no applications)
   const used = new Set(State.applications.map(a=>a.ipoId));
@@ -2277,6 +2285,7 @@ function renderIpos(main){
       <button data-tab="all" class="${tab==='all'?'active':''}">All</button>
     </div>
     <input type="search" id="ipo-search" class="ipo-search" placeholder="Search IPOs" value="${esc(State._ipoQuery||'')}" autocomplete="off">
+    <div class="set-sub" id="ipo-diag" style="margin:0 0 8px;"></div>
     <div id="ipo-list"></div>
   `;
   document.getElementById('add-ipo').addEventListener('click',()=>openIpoModal(null));
@@ -2315,6 +2324,8 @@ function renderIpos(main){
     if(ra===1) return (a.openDate||'').localeCompare(b.openDate||'');
     return (b.closeDate||'').localeCompare(a.closeDate||'') || (b.openDate||'').localeCompare(a.openDate||'');
   });
+  const diag = document.getElementById('ipo-diag');
+  if(diag) diag.textContent = `v${APP_VERSION} · ${list.length} shown` + (tab==='all' && !q ? ` · ${hiddenOld} old hidden${State._ipoShowOlder?' (showing them)':''} · ${State.ipos.length} stored` : '');
   listEl.innerHTML = list.length===0 ? `<div class="empty-state">${ICONS.ipo}<div class="t">No ${typeTab==='sme'?'SME':'Mainboard'} IPOs here</div><div class="s">Add one, or switch tabs / sync live IPOs.</div></div>` : `
     <div class="card" style="padding:6px 12px;">
       ${list.map(ipo=>{
@@ -3274,7 +3285,7 @@ function renderSettings(main){
       </div>
     </details>
 
-    <div class="set-sub" style="text-align:center;margin:20px 8px 6px;line-height:1.5;">IPO Ledger v${APP_VERSION}<br>GMP data via InvestorGain · dates via IPOWatch and registrar sites<br>Information only — not investment advice. Always verify on official sources.</div>
+    <div class="set-sub" style="text-align:center;margin:20px 8px 6px;line-height:1.5;">IPO Ledger v${APP_VERSION}<br>GMP data via InvestorGain · dates via IPOWatch and registrar sites<br>Information only — not investment advice. Always verify on official sources.<br><button class="al-link" id="s-reload" style="margin-top:8px;">Reload latest version</button></div>
   `;
   const installBtn = document.getElementById('install-btn');
   if(installBtn) installBtn.addEventListener('click', async ()=>{
@@ -3294,6 +3305,7 @@ function renderSettings(main){
   document.getElementById('s-import').addEventListener('click', triggerImport);
   document.getElementById('s-fix-sme').addEventListener('click', autoDetectSmeIpos);
   document.getElementById('s-merge-dupes').addEventListener('click', mergeDuplicateIpos);
+  document.getElementById('s-reload').addEventListener('click', reloadLatestVersion);
   document.getElementById('s-prune-ipos').addEventListener('click', async ()=>{ const n = await pruneOldIpos(); toast(n ? `Cleared ${n} old IPO${n>1?'s':''}` : 'Nothing old to clear'); });
   const settingsSignIn = document.getElementById('settings-signin-btn');
   if(settingsSignIn) settingsSignIn.addEventListener('click', signInWithGoogle);
