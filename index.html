@@ -373,6 +373,12 @@ a.link:hover{ text-decoration:underline; }
 button.chip{ background:none; cursor:pointer; font-family:inherit; color:var(--ink-dim); }
 .sp-row{ display:flex; align-items:center; gap:8px; margin:6px 0; }
 .sel-sm{ flex:1; min-width:0; padding:8px; border-radius:8px; border:1px solid var(--line); background:var(--card); color:var(--ink); font-family:inherit; font-size:13.5px; }
+
+.al-row.al-wrap{ flex-wrap:wrap; }
+.al-sub{ flex-basis:100%; display:flex; align-items:center; justify-content:space-between; gap:10px; margin-top:6px; }
+.al-check{ border:1.5px solid var(--seal); color:var(--seal); background:transparent; font-weight:700; display:inline-flex; align-items:center; gap:5px; padding:6px 9px; font-size:12px; flex:none; }
+.al-check svg{ width:14px; height:14px; }
+.al-sub .al-links{ margin:0; flex-shrink:0; }
 </style>
 </head>
 <body>
@@ -2933,20 +2939,19 @@ function openAllotmentModal(ipoId){
   let editing = null;                         // { id, mode:'partial' | 'split' }
   const hook = ()=>{ State._onModalClose = ()=>{ const y=window.scrollY; render(); window.scrollTo(0,y); }; };
 
-  const linksFor = (a, withCheck)=>`<div class="al-links">
-      ${withCheck ? `<button class="al-link" data-check-allotment="${a.id}">Check allotment ↗</button>` : ''}
-      <button class="al-link" data-edit-id="${a.id}" data-edit-mode="partial">${withCheck?'Part allotted…':'Edit shares'}</button>
-      ${(a.lots||0)>1 ? `<button class="al-link" data-edit-id="${a.id}" data-edit-mode="split">Split by category</button>` : ''}
-    </div>`;
-
   const pendingRow = (a)=>{
     const applicant = applicantById(a.applicantId);
+    const idObj = allotmentId(applicant);
     return `<div class="al-row" data-swipe="${a.id}">
       <div class="al-main">
         <div class="al-name">${esc(applicant?applicant.name:'—')}${catTag(a)}</div>
         <div class="al-meta tabular">${a.lots?a.lots+' lot'+(a.lots>1?'s':'')+' · ':''}${totalShares(a)?totalShares(a)+' sh · ':''}${fmtMoney(a.amount)}</div>
-        ${linksFor(a, true)}
+        <div class="al-links">
+          <button class="al-link" data-edit-id="${a.id}" data-edit-mode="partial">Part allotted…</button>
+          ${(a.lots||0)>1 ? `<button class="al-link" data-edit-id="${a.id}" data-edit-mode="split">Split</button>` : ''}
+        </div>
       </div>
+      <button class="btn sm al-check" data-check-allotment="${a.id}" title="Check allotment${idObj?' (copies '+idObj.label+')':' — no PAN or BO ID saved'}">${ICONS.external} Check</button>
       <button class="btn sm ghost" data-set-status="${a.id}" data-status="not_allotted">Not allotted</button>
       <button class="btn sm primary" data-set-status="${a.id}" data-status="allotted">Allotted</button>
     </div>`;
