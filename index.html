@@ -392,7 +392,7 @@ button.chip{ background:none; cursor:pointer; font-family:inherit; color:var(--i
    ========================================================= */
 
 /* ---------- ICONS (tiny inline svg set) ---------- */
-const APP_VERSION = '1.2';
+const APP_VERSION = '1.3';
 const ICONS = {
   back: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>`,
   list: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 6h13M8 12h13M8 18h13"/><path d="M3 6h.01M3 12h.01M3 18h.01"/></svg>`,
@@ -770,6 +770,14 @@ function catTag(a){                         // shown only when it tells you some
   const multi = State.applications.filter(x=>x.ipoId===a.ipoId && x.applicantId===a.applicantId).length>1;
   return (k!=='retail' || multi) ? `<span class="al-cat">${esc(catName(k))}</span>` : '';
 }
+function isRecentIpo(ipo, hasPending, now){
+  if(hasPending) return true;                                   // you still have a result to enter
+  const day = (n)=>{ const d=new Date(now||Date.now()); d.setDate(d.getDate()-n); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); };
+  if(ipo.closeDate && ipo.closeDate < day(12)) return false;     // closed long ago, whatever the listing date says
+  const listing = ipo.listingDate || ipo.listingDateTentative;
+  if(listing && listing < day(4)) return false;                  // listed more than ~4 days ago
+  return true;
+}
 function allotmentId(applicant){
   if(!applicant) return null;
   if(applicant.pan) return { value:applicant.pan, label:'PAN' };
@@ -943,6 +951,7 @@ const NAV_MOBILE = ['dashboard','apply','applications','ipos','profit','settings
 
 const VALID_ROUTES = NAV.map(n=>n.key);
 function go(route, {replace=false}={}){
+  if(route==='ipos') State._ipoShowOlder = false;
   const deepApps = route==='applications' && State.appNav && State.appNav.ipoId;
   State.route = route;
   if(route==='applications') State.appNav = { ipoId:null, bankId:null };  // tapping the tab starts at the IPO list
@@ -2272,16 +2281,9 @@ function renderIpos(main){
   } else if(tab==='active'){
     list = list.filter(i=>ipoStatus(i).key!=='listed' && ipoStatus(i).key!=='closed');
   } else {
-    // "All": hide IPOs listed more than ~4 days ago (older ones stay one tap away via "Show older" or Search).
-    // Still shown regardless: IPOs that haven't listed yet, and any with an allotment result still pending.
-    const iso = (n)=>{ const d=new Date(); d.setDate(d.getDate()-n); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); };
-    const listCut = iso(4), closeCut = iso(12);
-    const keep = (i)=>{
-      if(ipoApplications(i.id).some(a=>a.allotmentStatus==='pending')) return true;
-      const listing = i.listingDate || i.listingDateTentative;
-      if(listing) return listing >= listCut;                       // listed within the last 4 days, or still to come
-      return !i.closeDate || i.closeDate >= closeCut;              // no listing date known: fall back to close date
-    };
+    // "All": hide IPOs that are old news — listed more than ~4 days ago, or closed more than 12 days ago.
+    // Always shown: upcoming/open IPOs and any with an allotment result still pending. Older ones: "Show older" or Search.
+    const keep = (i)=> isRecentIpo(i, ipoApplications(i.id).some(a=>a.allotmentStatus==='pending'));
     const kept = list.filter(keep);
     hiddenOld = list.length - kept.length;
     if(!State._ipoShowOlder) list = kept;
