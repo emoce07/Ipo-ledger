@@ -379,6 +379,11 @@ button.chip{ background:none; cursor:pointer; font-family:inherit; color:var(--i
 .al-check{ border:1.5px solid var(--seal); color:var(--seal); background:transparent; font-weight:700; display:inline-flex; align-items:center; gap:5px; padding:6px 9px; font-size:12px; flex:none; }
 .al-check svg{ width:14px; height:14px; }
 .al-sub .al-links{ margin:0; flex-shrink:0; }
+
+/* --- v12: account groups --- */
+.bank-grp{ display:flex; justify-content:space-between; align-items:baseline; gap:10px; padding:12px 2px 4px; font-size:12px; font-weight:800; letter-spacing:.4px; text-transform:uppercase; color:var(--gold); border-top:1px solid var(--line); }
+.bank-grp:first-child{ border-top:none; }
+.bank-grp .tabular{ font-weight:600; letter-spacing:0; text-transform:none; color:var(--ink-faint); font-size:11.5px; }
 </style>
 </head>
 <body>
@@ -392,7 +397,7 @@ button.chip{ background:none; cursor:pointer; font-family:inherit; color:var(--i
    ========================================================= */
 
 /* ---------- ICONS (tiny inline svg set) ---------- */
-const APP_VERSION = '1.9';
+const APP_VERSION = '2.1';
 const ICONS = {
   back: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>`,
   list: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 6h13M8 12h13M8 18h13"/><path d="M3 6h.01M3 12h.01M3 18h.01"/></svg>`,
@@ -781,6 +786,17 @@ function isRecentIpo(ipo, hasPending, now){
   if(listing && listing < day(4)) return false;                  // listed more than ~4 days ago
   return true;
 }
+function bankLabel(b){                          // "Slice › Atom Rent"; just the name when there is no group
+  if(!b) return '—';
+  const g = (b.group||'').trim();
+  return (!g || g.toLowerCase()===(b.name||'').trim().toLowerCase()) ? b.name : g+' › '+b.name;
+}
+function tb(id){ return id ? bankLabel(bankById(id)) : 'Outside'; }
+function groupBanks(){                           // keeps your order; accounts with the same group sit together
+  const order=[], map={};
+  State.banks.forEach(b=>{ const g=(b.group||'').trim(), k=g.toLowerCase(); if(!(k in map)){ map[k]={name:g,banks:[]}; order.push(k); } map[k].banks.push(b); });
+  return order.map(k=>map[k]);
+}
 function allotmentId(applicant){
   if(!applicant) return null;
   if(applicant.pan) return { value:applicant.pan, label:'PAN' };
@@ -799,8 +815,14 @@ function bankLedger(bankId){
 
   // transfers out/in
   State.transfers.forEach(t=>{
-    if(t.fromBankId===bankId) entries.push({date:t.date, label:`Transfer to ${bankById(t.toBankId)?.name||'—'}`, amount:-t.amount});
-    if(t.toBankId===bankId) entries.push({date:t.date, label:`Transfer from ${bankById(t.fromBankId)?.name||'—'}`, amount:t.amount});
+    if(t.fromBankId===bankId) entries.push({date:t.date, label: t.toBankId ? `Transfer to ${tb(t.toBankId)}` : (t.note ? `Money taken out — ${t.note}` : 'Money taken out'), amount:-t.amount});
+    if(t.toBankId===bankId) entries.push({date:t.date, label: t.fromBankId ? `Transfer from ${tb(t.fromBankId)}` : (t.note ? `Money added — ${t.note}` : 'Money added'), amount:t.amount});
+  });
+
+  // sale proceeds credited to this account
+  realSales().filter(x=>x.bankId===bankId).forEach(x=>{
+    const ipo = ipoById(x.ipoId);
+    entries.push({ date:x.saleDate, label:`${ipo?ipo.name:'IPO'} — sale proceeds (${applicantById(x.applicantId)?.name||'—'})`, amount:x.saleAmount||0 });
   });
 
   // applications: blocked amount leaves bank when applied; refund/unblock returns money
@@ -823,31 +845,17 @@ function bankAvailable(bankId){
   return bankLedger(bankId).current;
 }
 function bankBlocked(bankId){
-  // sum of applications on this bank not yet refunded (pending amount)
-  return State.applications.filter(a=>a.bankId===bankId).reduce((sum,a)=>{
-    const applied = a.amount||0;
-    const refunded = a.refundedAmount||0;
-    return sum + Math.max(0, applied - refunded);
-  },0);
+  // Money is only "blocked" while the application is still waiting for its result.
+  // Allotted money has become shares (see totalHeldInShares) and not-allotted money has come back.
+  return State.applications.filter(a=>a.bankId===bankId && (a.allotmentStatus||'pending')==='pending')
+    .reduce((sum,a)=>sum + (a.amount||0), 0);
 }
-
-function ipoStatus(ipo){
-  const openD = daysDiff(ipo.openDate);
-  const closeD = daysDiff(ipo.closeDate);
-  const allotD = daysDiff(ipo.allotmentDate);
-  const listD = daysDiff(ipo.listingDate);
-  if(listD!==null && listD<=0) return {key:'listed', label: listD===0?'Listing today':'Listed'};
-  if(listD===1) return {key:'listed', label:'Listing tomorrow'};
-  if(allotD!==null && allotD<=0) return {key:'allot', label: allotD===0?'Allotment today':'Allotment out'};
-  if(allotD===1) return {key:'allot', label:'Allotment tomorrow'};
-  if(closeD!==null && closeD<0) return {key:'closed', label:'Closed'};
-  if(closeD===0) return {key:'closing', label:'Closing today'};
-  if(closeD===1) return {key:'closing', label:'Closing tomorrow'};
-  if(openD!==null && openD<=0 && (closeD===null||closeD>=0)) return {key:'open', label:'Open now'};
-  if(openD===1) return {key:'upcoming', label:'Opens tomorrow'};
-  if(openD!==null && openD>1) return {key:'upcoming', label:`Opens in ${openD}d`};
-  return {key:'closed', label:'—'};
+function totalHeldInShares(){                    // allotted but not sold yet
+  const sold = new Set(realSales().map(x=>x.applicationId));
+  return State.applications.filter(a=>(a.allottedAmount||0)>0 && !sold.has(a.id)).reduce((t,a)=>t+(a.allottedAmount||0),0);
 }
+function primaryBank(){ return State.banks.find(b=>b.isPrimary) || null; }
+function unassignedSales(){ return realSales().filter(x=>!x.bankId); }
 
 function ipoApplications(ipoId){ return State.applications.filter(a=>a.ipoId===ipoId); }
 function ipoLotAmount(ipo){
@@ -1131,6 +1139,8 @@ function renderDashboard(main){
   const tmrItems = attn.filter(a=>grp(a)==='tomorrow');
   const otherItems = attn.filter(a=>grp(a)==='other');
 
+  const heldTotal = totalHeldInShares();
+  const heldChips = heldTotal>0 ? `<div class="chips-row"><span class="chips-label">Held in shares</span><span class="chip tabular">${fmtMoney(heldTotal)}</span><span class="set-sub">allotted, not sold yet</span></div>` : '';
   const hasDemo = [State.banks, State.applicants, State.ipos].some(arr=>arr.some(x=>x.demo));
   const obHidden = lsGet('ipoledger_onboard_hidden', false);
   const stepRow = (done, label, route)=>`<div class="ob-step ${done?'done':''}" data-ob-go="${route}"><span class="ob-dot">${done?'✓':''}</span><span>${label}</span><span class="ob-arrow">›</span></div>`;
@@ -1146,7 +1156,7 @@ function renderDashboard(main){
       ${stepRow(State.applications.length>0,'Pick an IPO and mark it applied','apply')}
       ${(State.banks.length===0 && State.applicants.length===0) ? `<button class="btn ghost block" id="ob-demo" style="margin-top:10px;">Try it with demo data first</button>` : ''}
     </div>` : '';
-  const bankBlock = State.banks.map(b=>({name:b.name, v:bankBlocked(b.id)})).filter(x=>x.v>0);
+  const bankBlock = State.banks.map(b=>({name:bankLabel(b), v:bankBlocked(b.id)})).filter(x=>x.v>0);
   const blockedChips = bankBlock.length ? `<div class="chips-row"><span class="chips-label">Blocked by bank</span>${bankBlock.map(x=>`<span class="chip tabular">${esc(x.name)} <b>${fmtMoney(x.v)}</b></span>`).join('')}</div>` : '';
   main.innerHTML = `
     <h1 class="page-title">Dashboard</h1>
@@ -1179,6 +1189,7 @@ function renderDashboard(main){
     </div>
 
     ${blockedChips}
+    ${heldChips}
     <div class="section-label">Open now</div>
     ${renderIpoStrip(State.ipos.filter(i=>ipoStatus(i).key==='open'))}
   `;
@@ -1223,7 +1234,7 @@ function openBanksOverviewModal(){
           ${recentTransfers.map(t=>`
             <div class="list-item">
               <div class="main">
-                <div class="title" style="font-size:13px;">${esc(bankById(t.fromBankId)?.name||'—')} → ${esc(bankById(t.toBankId)?.name||'—')}</div>
+                <div class="title" style="font-size:13px;">${esc(tb(t.fromBankId))} → ${esc(tb(t.toBankId))}</div>
                 <div class="meta">${fmtDate(t.date)}${t.note?' · '+esc(t.note):''}</div>
               </div>
               <div class="money tabular">${fmtMoney(t.amount)}</div>
@@ -1371,15 +1382,17 @@ function renderApply(main){
 
     bankSlot.innerHTML = `
       <div class="section-label">Select bank</div>
-      <div class="grid cols-3">
-        ${State.banks.map(b=>{
-          const avail = bankAvailable(b.id);
-          return `<div class="bankcard ${flow.bankId===b.id?'selected':''}" data-bank="${b.id}">
-            <div class="bn">${esc(b.name)}</div>
-            <div class="bb tabular">Available: ${fmtMoney(avail)}</div>
-          </div>`;
-        }).join('')}
-      </div>
+      ${groupBanks().map(g=>`
+        ${g.name ? `<div class="grp-label" style="margin:10px 0 4px;">${esc(g.name)}</div>` : ''}
+        <div class="grid cols-3">
+          ${g.banks.map(b=>{
+            const avail = bankAvailable(b.id);
+            return `<div class="bankcard ${flow.bankId===b.id?'selected':''}" data-bank="${b.id}">
+              <div class="bn">${esc(b.name)}</div>
+              <div class="bb tabular">Available: ${fmtMoney(avail)}</div>
+            </div>`;
+          }).join('')}
+        </div>`).join('')}
     `;
     bankSlot.querySelectorAll('[data-bank]').forEach(el=>el.addEventListener('click',()=>{
       flow.bankId = el.dataset.bank; flow.selected = new Map();
@@ -1394,7 +1407,7 @@ function renderApply(main){
       if(who.length){
         const q = document.createElement('button');
         q.className = 'btn ghost block'; q.style.cssText = 'margin-top:10px;justify-content:flex-start;text-align:left;';
-        q.innerHTML = `↻ Same as last time — ${esc(bankById(last.bankId).name)} · ${who.length} applicant${who.length>1?'s':''}`;
+        q.innerHTML = `↻ Same as last time — ${esc(bankLabel(bankById(last.bankId)))} · ${who.length} applicant${who.length>1?'s':''}`;
         q.addEventListener('click',()=>{
           flow.bankId = last.bankId;
           flow.selected = new Map(who.map(pp=>[pp.id, Math.max(minL, Number(pp.lots)||1)]));
@@ -1422,7 +1435,7 @@ function renderApply(main){
 
     applicantSlot.innerHTML = `
       <div class="row" style="margin-top:22px;">
-        <div class="section-label" style="margin:0;">${esc(bank.name)}</div>
+        <div class="section-label" style="margin:0;">${esc(bankLabel(bank))}</div>
         <div style="font-size:12px;color:var(--ink-faint);" class="tabular">Available ${fmtMoney(avail)} · Blocked ${fmtMoney(blocked)}</div>
       </div>
       <div class="pill-tabs" style="margin:10px 0 8px;" id="cat-tabs">${CATEGORIES.map(([k,l])=>`<button data-cat="${k}" class="${cat===k?'active':''}">${l}</button>`).join('')}</div>
@@ -1480,7 +1493,7 @@ function renderApply(main){
       <button class="btn primary block" id="mark-applied-btn" style="margin-top:12px;">
         Mark selected as applied
       </button>
-      ${estTotal>avail? `<div style="font-size:12px;color:var(--rust);margin-top:8px;">Amount exceeds available balance in ${esc(bank.name)} (${fmtMoney(avail)} available). You can still proceed if this is expected.</div>`:''}
+      ${estTotal>avail? `<div style="font-size:12px;color:var(--rust);margin-top:8px;">Amount exceeds available balance in ${esc(bankLabel(bank))} (${fmtMoney(avail)} available). You can still proceed if this is expected.</div>`:''}
     ` : '';
     const markBtn = document.getElementById('mark-applied-btn');
     if(markBtn) markBtn.addEventListener('click', ()=> markSelectedApplied(ipo, bank, lotAmt));
@@ -1509,7 +1522,7 @@ async function markSelectedApplied(ipo, bank, lotAmt){
   }
   lsSet('ipoledger_lastapply', { bankId: bank.id, people: entries.map(([id,lots])=>({id, lots})) });
   flow.selected = new Map();
-  toast(`✅ ${entries.length} marked applied — ${bank.name}, ${fmtMoney(totalAmount)}`, { ms:7000, action:{ label:'Undo', fn: async ()=>{
+  toast(`✅ ${entries.length} marked applied — ${bankLabel(bank)}, ${fmtMoney(totalAmount)}`, { ms:7000, action:{ label:'Undo', fn: async ()=>{
     for(const a of created){ await idbDelete('applications', a.id); }
     const ids = new Set(created.map(a=>a.id));
     State.applications = State.applications.filter(x=>!ids.has(x.id));
@@ -1607,7 +1620,7 @@ function renderApplications(main){
       const bank = bankById(bid); const g = groups[bid]; const pend = g.filter(isPending);
       return `<div class="list-item" style="cursor:pointer;" data-bank="${bid}">
         <div class="main" style="flex:1;">
-          <div class="title">${esc(bank?bank.name:'Unknown bank')}</div>
+          <div class="title">${esc(bank?bankLabel(bank):'Unknown bank')}</div>
           <div class="meta tabular">${g.length} applicant${g.length!==1?'s':''} · ${fmtMoney(sum(g))}</div>
         </div>
         <div style="font-size:11.5px;color:${pend.length?'var(--seal)':'var(--ink-faint)'};font-weight:600;">${pend.length?pend.length+' pending':'Done'}</div>
@@ -1630,7 +1643,7 @@ function renderApplications(main){
     const pend = list.filter(isPending);
     main.innerHTML = `
       ${backBar(ipo?ipo.name:'Back','app-back')}
-      <h1 class="page-title">${esc(bank?bank.name:'Bank')}</h1>
+      <h1 class="page-title">${esc(bank?bankLabel(bank):'Bank')}</h1>
       <p class="page-sub">${esc(ipo?ipo.name:'')} · ${list.length} applicant${list.length!==1?'s':''} · ${pend.length} pending · ${fmtMoney(sum(list))}</p>
       <div class="card" style="padding:6px 12px;">${list.map(row).join('')}</div>
     `;
@@ -1674,44 +1687,73 @@ function confirmUnapply(appId){
 
 /* ==================== BANKS ==================== */
 function renderBanks(main){
+  const row = (b)=>{
+    const avail = bankAvailable(b.id), blocked = bankBlocked(b.id);
+    return `<div class="list-item">
+      <div class="main" data-view-bank="${b.id}" style="cursor:pointer;flex:1;">
+        <div class="title">${esc(b.name)}${b.isPrimary?' <span class="al-cat">Primary</span>':''}</div>
+        <div class="meta tabular">Available ${fmtMoney(avail)} · Blocked ${fmtMoney(blocked)}</div>
+      </div>
+      <div class="actions">
+        <button class="iconbtn" data-edit-bank="${b.id}">${ICONS.edit}</button>
+        <button class="iconbtn" data-del-bank="${b.id}">${ICONS.trash}</button>
+      </div>
+    </div>`;
+  };
   main.innerHTML = `
     <div class="row"><h1 class="page-title">Banks</h1>
-      <button class="btn primary" id="add-bank">${ICONS.plus} Add bank</button>
+      <div style="display:flex;gap:8px;">
+        ${State.banks.length>0 ? `<button class="btn ghost sm" id="move-money">⇄ Move money</button>` : ''}
+        <button class="btn primary sm" id="add-bank">${ICONS.plus} Add</button>
+      </div>
     </div>
-    <p class="page-sub">Your saved banks — select any to see its money history</p>
+    <p class="page-sub">Accounts and sub-accounts (like your Slice atoms) — tap one to see its money history</p>
     ${State.banks.length===0 ? `<div class="empty-state">${ICONS.bank}<div class="t">No banks yet</div><div class="s">Add your first bank to start tracking money.</div></div>` : `
       <div class="card" style="padding:6px 12px;">
-        ${State.banks.map(b=>{
-          const avail = bankAvailable(b.id);
-          const blocked = bankBlocked(b.id);
-          return `<div class="list-item">
-            <div class="main" data-view-bank="${b.id}" style="cursor:pointer;flex:1;">
-              <div class="title">${esc(b.name)}</div>
-              <div class="meta tabular">Available ${fmtMoney(avail)} · Blocked ${fmtMoney(blocked)}</div>
-            </div>
-            <div class="actions">
-              <button class="iconbtn" data-edit-bank="${b.id}">${ICONS.edit}</button>
-              <button class="iconbtn" data-del-bank="${b.id}">${ICONS.trash}</button>
-            </div>
-          </div>`;
+        ${groupBanks().map(g=>{
+          if(!g.name) return g.banks.map(row).join('');
+          const av = g.banks.reduce((t,b)=>t+bankAvailable(b.id),0), bl = g.banks.reduce((t,b)=>t+bankBlocked(b.id),0);
+          return `<div class="bank-grp"><span>${esc(g.name)}</span><span class="tabular">Available ${fmtMoney(av)}${bl?` · Blocked ${fmtMoney(bl)}`:''}</span></div>${g.banks.map(row).join('')}`;
         }).join('')}
       </div>
     `}
     <div id="bank-detail"></div>
   `;
   document.getElementById('add-bank').addEventListener('click',()=>openBankModal(null));
+  const mv = document.getElementById('move-money'); if(mv) mv.addEventListener('click',()=>openTransferModal());
   main.querySelectorAll('[data-edit-bank]').forEach(el=>el.addEventListener('click',()=>openBankModal(bankById(el.dataset.editBank))));
   main.querySelectorAll('[data-del-bank]').forEach(el=>el.addEventListener('click',()=>confirmDeleteBank(el.dataset.delBank)));
   main.querySelectorAll('[data-view-bank]').forEach(el=>el.addEventListener('click',()=>renderBankDetail(el.dataset.viewBank)));
+}
+function openBackfillModal(){
+  const pb = primaryBank(), list = unassignedSales(), total = list.reduce((t,x)=>t+(x.saleAmount||0),0);
+  if(!pb){ toast('Set a primary account first: Banks → edit an account → Primary account'); return; }
+  if(!list.length){ toast('All your sales are already credited to an account'); return; }
+  openModal(`
+    <div class="modal">
+      <h3>Credit earlier sales?</h3>
+      <p style="font-size:13px;color:var(--ink-dim);">${list.length} sale${list.length>1?'s':''} you recorded earlier (${fmtMoney(total)} received in total) ${list.length>1?'were':'was'} never added to any account. Add ${list.length>1?'them':'it'} to <b>${esc(bankLabel(pb))}</b> so its balance includes that money?</p>
+      <p class="set-sub">Skip this if you already corrected ${esc(bankLabel(pb))}’s balance by hand, otherwise the money would be counted twice.</p>
+      <div class="modal-actions"><button class="btn ghost" data-close="1">Not now</button><button class="btn primary" id="bf-go">Credit ${fmtMoney(total)}</button></div>
+    </div>`);
+  document.getElementById('bf-go').addEventListener('click', async ()=>{
+    for(const x of list){ x.bankId = pb.id; await idbPut('sales', x); }
+    closeModal(); toast(`Credited ${fmtMoney(total)} to ${bankLabel(pb)}`); render();
+  });
 }
 function openBankModal(bank){
   const isEdit = !!bank;
   openModal(`
     <div class="modal">
       <h3>${isEdit?'Edit bank':'Add bank'}</h3>
-      <label class="field">Bank name
-        <input type="text" id="bank-name" value="${bank?esc(bank.name):''}" placeholder="e.g. SBI">
+      <label class="field">Account name
+        <input type="text" id="bank-name" value="${bank?esc(bank.name):''}" placeholder="e.g. SBI, or Atom Rent">
       </label>
+      <label class="field" style="margin-top:12px;">Group (optional)
+        <input type="text" id="bank-group" list="bank-groups" value="${bank?esc(bank.group||''):''}" placeholder="e.g. Slice — same group for the main account and its atoms">
+      </label>
+      <label style="display:flex;gap:10px;align-items:center;margin-top:14px;font-size:13.5px;"><input type="checkbox" id="bank-primary" ${bank&&bank.isPrimary?'checked':''} style="width:18px;height:18px;flex:none;"> <span>Primary account — money from sales lands here<br><span class="set-sub">You can still pick a different account on any sale.</span></span></label>
+      <datalist id="bank-groups">${[...new Set(State.banks.map(b=>(b.group||'').trim()).filter(Boolean))].map(g=>`<option value="${esc(g)}">`).join('')}</datalist>
       <label class="field" style="margin-top:12px;">Current available money (₹)
         <input type="number" id="bank-balance" value="${bank?bank.openingBalance:''}" placeholder="0">
       </label>
@@ -1726,14 +1768,20 @@ function openBankModal(bank){
     const balance = Number(document.getElementById('bank-balance').value)||0;
     if(!name){ toast('Enter a bank name'); return; }
     const obj = bank || { id: uid(), createdDate: todayStr() };
-    obj.name = name; obj.openingBalance = isEdit ? obj.openingBalance : balance;
+    obj.name = name; obj.group = document.getElementById('bank-group').value.trim(); obj.openingBalance = isEdit ? obj.openingBalance : balance;
     if(isEdit){
       // editing balance directly adjusts opening balance (simple model)
       obj.openingBalance = balance;
     }
+    const wantPrimary = document.getElementById('bank-primary').checked, wasPrimary = !!obj.isPrimary;
+    obj.isPrimary = wantPrimary;
     await idbPut('banks', obj);
     if(!isEdit) State.banks.push(obj);
+    if(wantPrimary){                                  // only one primary account
+      for(const o of State.banks){ if(o.id!==obj.id && o.isPrimary){ o.isPrimary = false; await idbPut('banks', o); } }
+    }
     closeModal(); toast(isEdit?'Bank updated':'Bank added'); render();
+    if(wantPrimary && !wasPrimary && unassignedSales().length) openBackfillModal();
   });
 }
 function confirmDeleteBank(id){
@@ -1760,7 +1808,8 @@ function renderBankDetail(bankId){
   if(!bank || !detail) return;
   const {entries, current} = bankLedger(bankId);
   detail.innerHTML = `
-    <div class="section-label">${esc(bank.name)} — money history</div>
+    <div class="row" style="margin-top:18px;"><div class="section-label" style="margin:0;">${esc(bankLabel(bank))} — money history</div>
+      <button class="btn sm ghost" id="fix-balance">Match balance</button></div>
     <div class="card">
       ${entries.map(e=>`
         <div class="list-item">
@@ -1771,6 +1820,36 @@ function renderBankDetail(bankId){
       <div class="list-item"><div class="title">Current available</div><div class="money gold tabular" style="color:var(--gold);">${fmtMoney(current)}</div></div>
     </div>
   `;
+  document.getElementById('fix-balance').addEventListener('click', ()=>openBalanceFixModal(bankId));
+}
+function openBalanceFixModal(bankId){
+  const bank = bankById(bankId), cur = bankAvailable(bankId);
+  openModal(`
+    <div class="modal">
+      <h3>Match balance — ${esc(bankLabel(bank))}</h3>
+      <div class="set-sub" style="margin-bottom:10px;">Type the free balance this account actually shows right now, not counting money blocked for IPOs. The app records the difference (interest, charges, anything untracked) so every rupee matches.</div>
+      <div class="set-sub tabular" style="margin-bottom:8px;">The app currently has ${fmtMoney(cur)}</div>
+      <label class="field">Actual balance now (₹)<input type="number" id="fb-actual" inputmode="decimal" placeholder="${cur}"></label>
+      <div id="fb-diff" class="set-sub" style="min-height:16px;margin-top:6px;"></div>
+      <label class="field" style="margin-top:8px;">Note (optional)<input type="text" id="fb-note" placeholder="e.g. interest, charges"></label>
+      <div class="modal-actions"><button class="btn ghost" data-close="1">Cancel</button><button class="btn primary" id="fb-save">Record difference</button></div>
+    </div>`);
+  const input = document.getElementById('fb-actual');
+  input.addEventListener('input', ()=>{
+    const d = Math.round(((Number(input.value)||0) - cur)*100)/100, el = document.getElementById('fb-diff');
+    el.style.color = d===0 ? 'var(--ink-faint)' : d>0 ? 'var(--green)' : 'var(--rust)';
+    el.textContent = input.value==='' ? '' : d===0 ? 'Already matches' : `${d>0?'Money added':'Money taken out'}: ${fmtMoney(Math.abs(d))}`;
+  });
+  document.getElementById('fb-save').addEventListener('click', async ()=>{
+    if(input.value===''){ toast('Enter the actual balance'); return; }
+    const d = Math.round(((Number(input.value)||0) - cur)*100)/100;
+    if(d===0){ closeModal(); toast('Already matches'); return; }
+    const note = document.getElementById('fb-note').value.trim() || 'Balance adjustment';
+    const obj = d>0 ? { id:uid(), fromBankId:'', toBankId:bankId, amount:d, date:todayStr(), note }
+                    : { id:uid(), fromBankId:bankId, toBankId:'', amount:-d, date:todayStr(), note };
+    await idbPut('transfers', obj); State.transfers.push(obj);
+    closeModal(); toast('Balance matched'); render(); renderBankDetail(bankId);
+  });
 }
 
 /* ==================== APPLICANTS ==================== */
@@ -2643,16 +2722,16 @@ function confirmDeleteIpo(id){
 function renderTransfers(main){
   main.innerHTML = `
     <div class="row"><h1 class="page-title">Transfers</h1>
-      <button class="btn primary" id="add-transfer" ${State.banks.length<2?'disabled':''}>${ICONS.plus} Record transfer</button>
+      <button class="btn primary" id="add-transfer" ${State.banks.length<1?'disabled':''}>${ICONS.plus} Record transfer</button>
     </div>
-    <p class="page-sub">Move money between your banks before applying</p>
-    ${State.banks.length<2 ? `<div class="empty-state"><div class="t">Add at least 2 banks first</div></div>` : ''}
+    <p class="page-sub">Move money between your accounts, or record money added from / taken out to outside</p>
+    ${State.banks.length<1 ? `<div class="empty-state"><div class="t">Add a bank first</div></div>` : ''}
     ${State.transfers.length===0 ? `<div class="empty-state">${ICONS.transfer}<div class="t">No transfers yet</div></div>` : `
       <div class="card" style="padding:6px 12px;">
         ${State.transfers.slice().sort((a,b)=>(b.date||'').localeCompare(a.date||'')).map(t=>`
           <div class="list-item">
             <div class="main">
-              <div class="title">${esc(bankById(t.fromBankId)?.name||'—')} → ${esc(bankById(t.toBankId)?.name||'—')}</div>
+              <div class="title">${esc(tb(t.fromBankId))} → ${esc(tb(t.toBankId))}</div>
               <div class="meta">${fmtDate(t.date)}${t.note?' · '+esc(t.note):''}</div>
             </div>
             <div class="money tabular">${fmtMoney(t.amount)}</div>
@@ -2662,26 +2741,29 @@ function renderTransfers(main){
     `}
   `;
   const btn = document.getElementById('add-transfer');
-  if(btn && State.banks.length>=2) btn.addEventListener('click', openTransferModal);
+  if(btn && State.banks.length>=1) btn.addEventListener('click', ()=>openTransferModal());
 }
-function openTransferModal(){
+function openTransferModal(preFrom, preTo){
+  const bankOpts = (sel)=>State.banks.map(b=>`<option value="${b.id}" ${b.id===sel?'selected':''}>${esc(bankLabel(b))} (${fmtMoney(bankAvailable(b.id))})</option>`).join('');
+  const from0 = preFrom!==undefined ? preFrom : (State.banks[0]||{}).id;
+  const to0 = preTo!==undefined ? preTo : (State.banks[1] ? State.banks[1].id : '');
   openModal(`
     <div class="modal">
-      <h3>Record transfer</h3>
+      <h3>Move money</h3>
       <div class="grid" style="gap:10px;">
-        <label class="field">From bank
-          <select id="t-from">${State.banks.map(b=>`<option value="${b.id}">${esc(b.name)} (${fmtMoney(bankAvailable(b.id))})</option>`).join('')}</select>
+        <label class="field">From
+          <select id="t-from"><option value="" ${from0===''?'selected':''}>Outside — money added</option>${bankOpts(from0)}</select>
         </label>
-        <label class="field">To bank
-          <select id="t-to">${State.banks.map(b=>`<option value="${b.id}">${esc(b.name)}</option>`).join('')}</select>
+        <label class="field">To
+          <select id="t-to"><option value="" ${to0===''?'selected':''}>Outside — taken out / spent</option>${bankOpts(to0)}</select>
         </label>
-        <label class="field">Amount (₹)<input type="number" id="t-amount" placeholder="0"></label>
+        <label class="field">Amount (₹)<input type="number" id="t-amount" inputmode="decimal" placeholder="0"></label>
         <label class="field">Date<input type="date" id="t-date" value="${todayStr()}"></label>
         <label class="field">Note (optional)<input type="text" id="t-note"></label>
       </div>
       <div class="modal-actions">
         <button class="btn ghost" data-close="1">Cancel</button>
-        <button class="btn primary" id="save-transfer">Record transfer</button>
+        <button class="btn primary" id="save-transfer">Record</button>
       </div>
     </div>
   `);
@@ -2691,12 +2773,13 @@ function openTransferModal(){
     const amount = Number(document.getElementById('t-amount').value)||0;
     const date = document.getElementById('t-date').value || todayStr();
     const note = document.getElementById('t-note').value.trim();
-    if(fromBankId===toBankId){ toast('From and to bank must differ'); return; }
+    if(!fromBankId && !toBankId){ toast('Pick at least one of your accounts'); return; }
+    if(fromBankId===toBankId){ toast('From and To must be different'); return; }
     if(amount<=0){ toast('Enter a valid amount'); return; }
     const obj = { id: uid(), fromBankId, toBankId, amount, date, note };
     await idbPut('transfers', obj);
     State.transfers.push(obj);
-    closeModal(); toast('Transfer recorded'); render();
+    closeModal(); toast('Recorded'); render();
   });
 }
 
@@ -2726,7 +2809,10 @@ function renderProfit(main){
 
   main.innerHTML = `
     <div class="row"><h1 class="page-title">Profit</h1>
-      <button class="btn primary sm" id="add-sale">${ICONS.plus} Record sale</button>
+      <div style="display:flex;gap:8px;">
+        <button class="btn ghost sm" id="add-withdrawal">− Withdraw</button>
+        <button class="btn primary sm" id="add-sale">${ICONS.plus} Record sale</button>
+      </div>
     </div>
     <div class="grid cols-2" style="margin:6px 0 4px;">
       <div class="stat"><div class="label">Total profit</div><div class="value ${totalProfit>=0?'pos':'neg'} tabular">${fmtMoney(totalProfit)}</div></div>
@@ -2737,10 +2823,7 @@ function renderProfit(main){
       ${earlier ? `<span class="chip tabular">Earlier profit <b>${fmtMoney(earlier)}</b></span>` : ''}
       ${withdrawn ? `<span class="chip tabular">Withdrawn <b style="color:var(--rust);">${fmtMoney(withdrawn)}</b></span>` : ''}
     </div>
-    <div class="set-3" style="grid-template-columns:repeat(2,minmax(0,1fr));margin-top:10px;">
-      <button class="btn ghost" id="add-withdrawal">− Withdraw / spend</button>
-      <button class="btn ghost" id="add-earlier">+ Earlier profit</button>
-    </div>
+
     ${totalCommission>0 ? `<div class="chips-row"><span class="chips-label">Commission paid</span><span class="chip tabular">${fmtMoney(totalCommission)}</span><span class="set-sub">already deducted from the profit above</span></div>` : ''}
     ${months.length ? `<div class="chips-row"><span class="chips-label">By month</span>${months.map(m=>`<span class="chip tabular">${monthName(m)} <b style="color:${byMonth[m]>=0?'var(--green)':'var(--rust)'};">${byMonth[m]>=0?'+':''}${fmtMoney(byMonth[m])}</b></span>`).join('')}</div>` : ''}
 
@@ -2781,7 +2864,6 @@ function renderProfit(main){
   main.querySelectorAll('[data-sell]').forEach(b=>b.addEventListener('click',()=>openSaleModal(b.dataset.sell)));
   main.querySelectorAll('[data-edit-sale]').forEach(el=>el.addEventListener('click',()=>openSaleModal(null, el.dataset.editSale)));
   document.getElementById('add-withdrawal').addEventListener('click',()=>openLedgerModal('withdrawal'));
-  document.getElementById('add-earlier').addEventListener('click',()=>openLedgerModal('earlier'));
   main.querySelectorAll('[data-edit-ledger]').forEach(el=>el.addEventListener('click',()=>{ const x=State.sales.find(v=>v.id===el.dataset.editLedger); if(x) openLedgerModal(x.kind, x.id); }));
 }
 function openLedgerModal(kind, editId){
@@ -2852,6 +2934,12 @@ function openSaleModal(preselectId, editId){
           </select>
         </label>
         <label class="field">Amount received in bank (₹)<input type="number" id="s-received" inputmode="decimal" placeholder="e.g. 7850" value="${editing?editing.saleAmount:''}"></label>
+        <label class="field">Credit to account
+          <select id="s-bank">
+            ${State.banks.map(b=>`<option value="${b.id}" ${b.id===(editing ? (editing.bankId || (primaryBank()||{}).id) : (primaryBank()||{}).id)?'selected':''}>${esc(bankLabel(b))}${b.isPrimary?' (primary)':''}</option>`).join('')}
+            <option value="none" ${editing && editing.bankId==='none' ? 'selected' : (!State.banks.length ? 'selected' : '')}>Don’t add to any account</option>
+          </select>
+        </label>
         <div class="grid cols-2">
           <label class="field">Invested (₹)<input type="number" id="s-invest" inputmode="decimal" placeholder="0" value="${editing?editing.investment:''}"></label>
           <label class="field">Sale date<input type="date" id="s-date" value="${editing?(editing.saleDate||todayStr()):todayStr()}"></label>
@@ -2899,6 +2987,7 @@ function openSaleModal(preselectId, editId){
       saleAmount: Number(recv)||0,          // what reached the bank, i.e. already after charges and taxes
       commission: Number(document.getElementById('s-commission').value)||0,
       saleDate: document.getElementById('s-date').value || todayStr(),
+      bankId: document.getElementById('s-bank').value || 'none',     // where the money landed
     };
     if(editing){ Object.assign(editing, fields); await idbPut('sales', editing); toast('Sale updated'); }
     else {
@@ -3074,7 +3163,7 @@ function openGmpHistoryModal(ipo){
 function openAllotmentModal(ipoId){
   const ipo = ipoById(ipoId);
   const nm = (a)=>((applicantById(a.applicantId)||{}).name||'');
-  const bn = (a)=>((bankById(a.bankId)||{}).name||'');
+  const bn = (a)=>(bankLabel(bankById(a.bankId)));
   const lotSize = Number(ipo.lotSize)||0;
   const price = ipoPricePerShare(ipo);
   const totalShares = (a)=> lotSize ? (a.lots||0)*lotSize : 0;
@@ -3166,7 +3255,7 @@ function openAllotmentModal(ipoId){
       ${apps.length===0 ? `<div class="empty-state"><div class="t">No applications for this IPO</div></div>` : ''}
       ${apps.length>0 && pend.length===0 ? `<div class="meta" style="text-align:center;padding:18px 0;color:var(--ink-faint);font-size:13px;">All results marked ✓</div>` : ''}
       ${Object.keys(byBank).sort((x,y)=>bankPos(x)-bankPos(y)).map(bid=>`
-        <div class="al-bank">${esc((bankById(bid)||{}).name||'—')}</div>
+        <div class="al-bank">${esc(bankLabel(bankById(bid)))}</div>
         ${byBank[bid].map(a=>show(a,pendingRow)).join('')}
       `).join('')}
       ${done.length ? `
@@ -3390,6 +3479,14 @@ function renderSettings(main){
         <button class="btn sm ghost" id="s-fix-sme">Run</button>
       </div>
       <div class="set-row">
+        <div><div class="set-label">Credit earlier sales</div><div class="set-sub">Add sale proceeds recorded before you picked a primary account</div></div>
+        <button class="btn sm ghost" id="s-backfill">Run</button>
+      </div>
+      <div class="set-row">
+        <div><div class="set-label">Earlier profit</div><div class="set-sub">Profit you made before using this app${earlierProfitTotal()?' — now '+fmtMoney(earlierProfitTotal()):''}</div></div>
+        <button class="btn sm ghost" id="s-earlier">Add</button>
+      </div>
+      <div class="set-row">
         <div><div class="set-label">Clear old IPOs</div><div class="set-sub">Deletes stored IPOs that closed long ago and have none of your applications</div></div>
         <button class="btn sm ghost" id="s-prune-ipos">Run</button>
       </div>
@@ -3420,6 +3517,8 @@ function renderSettings(main){
   document.getElementById('s-fix-sme').addEventListener('click', autoDetectSmeIpos);
   document.getElementById('s-merge-dupes').addEventListener('click', mergeDuplicateIpos);
   document.getElementById('s-reload').addEventListener('click', reloadLatestVersion);
+  document.getElementById('s-earlier').addEventListener('click', ()=>openLedgerModal('earlier'));
+  document.getElementById('s-backfill').addEventListener('click', ()=>openBackfillModal());
   document.getElementById('s-prune-ipos').addEventListener('click', async ()=>{ const n = await pruneOldIpos(); toast(n ? `Cleared ${n} old IPO${n>1?'s':''}` : 'Nothing old to clear'); });
   const settingsSignIn = document.getElementById('settings-signin-btn');
   if(settingsSignIn) settingsSignIn.addEventListener('click', signInWithGoogle);
