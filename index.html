@@ -392,7 +392,7 @@ button.chip{ background:none; cursor:pointer; font-family:inherit; color:var(--i
    ========================================================= */
 
 /* ---------- ICONS (tiny inline svg set) ---------- */
-const APP_VERSION = '1.8';
+const APP_VERSION = '1.9';
 const ICONS = {
   back: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>`,
   list: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 6h13M8 12h13M8 18h13"/><path d="M3 6h.01M3 12h.01M3 18h.01"/></svg>`,
@@ -883,9 +883,15 @@ function totalRefundPendingAll(){
     return s + Math.max(0, stillPending);
   },0);
 }
+function realSales(){ return State.sales.filter(x=>!x.kind); }
+function ledgerEntries(kind){ return State.sales.filter(x=>x.kind===kind); }
+function earlierProfitTotal(){ return ledgerEntries('earlier').reduce((t,x)=>t+(Number(x.amount)||0),0); }
+function withdrawnTotal(){ return ledgerEntries('withdrawal').reduce((t,x)=>t+(Number(x.amount)||0),0); }
+function earnedProfit(){ return totalProfitAll() + earlierProfitTotal(); }          // all-time profit incl. profit from before the app
+function availableBalance(){ return earnedProfit() - withdrawnTotal(); }            // what's left after withdrawals / expenses
 function saleNet(x){ return (x.saleAmount||0) - (x.investment||0) - (x.charges||0) - (x.commission||0); }   // profit after the commission you gave
 function totalProfitAll(){
-  return State.sales.reduce((s,sale)=> s + saleNet(sale), 0);
+  return realSales().reduce((s,sale)=> s + saleNet(sale), 0);
 }
 function totalMoneyInBanks(){
   return State.banks.reduce((s,b)=>s+bankAvailable(b.id),0) + totalBlockedAll();
@@ -1092,7 +1098,8 @@ function triggerImport(){
 
 /* ==================== DASHBOARD ==================== */
 function renderDashboard(main){
-  const profit = totalProfitAll();
+  const profit = earnedProfit();
+  const profitLeft = availableBalance(), profitOut = withdrawnTotal();
   const totalMoney = totalMoneyInBanks();
   const blocked = totalBlockedAll();
   const refundPending = totalRefundPendingAll();
@@ -1162,6 +1169,7 @@ function renderDashboard(main){
     <div class="hero-stat ${profit>=0?'pos':'neg'}" style="margin-top:14px;">
       <div class="label">Total IPO profit</div>
       <div class="value tabular">${fmtMoney(profit)}</div>
+      ${profitOut>0 ? `<div class="set-sub" style="margin-top:4px;">Available ${fmtMoney(profitLeft)} after ${fmtMoney(profitOut)} withdrawn</div>` : ''}
     </div>
     <div class="grid cols-4" style="margin-top:12px;">
       <div class="stat" id="banks-overview-card" style="cursor:pointer;"><div class="label">In banks</div><div class="value gold tabular">${fmtMoney(totalMoney)}</div></div>
@@ -2694,10 +2702,11 @@ function openTransferModal(){
 
 /* ==================== PROFIT ==================== */
 function renderProfit(main){
-  const totalProfit = totalProfitAll();
+  const totalProfit = earnedProfit(), balance = availableBalance(), withdrawn = withdrawnTotal(), earlier = earlierProfitTotal();
   const net = saleNet;
-  const totalCommission = State.sales.reduce((t,x)=>t+(x.commission||0),0);
-  const sales = State.sales.slice().sort((a,b)=>(b.saleDate||'').localeCompare(a.saleDate||''));
+  const totalCommission = realSales().reduce((t,x)=>t+(x.commission||0),0);
+  const ledger = State.sales.filter(x=>x.kind).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+  const sales = realSales().slice().sort((a,b)=>(b.saleDate||'').localeCompare(a.saleDate||''));
 
   // by IPO
   const byIpo = {};
@@ -2712,7 +2721,7 @@ function renderProfit(main){
   const thisMonth = byMonth[todayStr().slice(0,7)]||0;
 
   // allotted but not sold yet
-  const soldIds = new Set(State.sales.map(x=>x.applicationId));
+  const soldIds = new Set(realSales().map(x=>x.applicationId));
   const unsold = State.applications.filter(a=>(a.allottedAmount||0)>0 && !soldIds.has(a.id));
 
   main.innerHTML = `
@@ -2721,7 +2730,16 @@ function renderProfit(main){
     </div>
     <div class="grid cols-2" style="margin:6px 0 4px;">
       <div class="stat"><div class="label">Total profit</div><div class="value ${totalProfit>=0?'pos':'neg'} tabular">${fmtMoney(totalProfit)}</div></div>
-      <div class="stat"><div class="label">This month</div><div class="value ${thisMonth>=0?'pos':'neg'} tabular">${fmtMoney(thisMonth)}</div></div>
+      <div class="stat"><div class="label">Available</div><div class="value ${balance>=0?'pos':'neg'} tabular">${fmtMoney(balance)}</div></div>
+    </div>
+    <div class="chips-row">
+      <span class="chip tabular">This month <b style="color:${thisMonth>=0?'var(--green)':'var(--rust)'};">${thisMonth>=0?'+':'−'}${fmtMoney(Math.abs(thisMonth))}</b></span>
+      ${earlier ? `<span class="chip tabular">Earlier profit <b>${fmtMoney(earlier)}</b></span>` : ''}
+      ${withdrawn ? `<span class="chip tabular">Withdrawn <b style="color:var(--rust);">${fmtMoney(withdrawn)}</b></span>` : ''}
+    </div>
+    <div class="set-3" style="grid-template-columns:repeat(2,minmax(0,1fr));margin-top:10px;">
+      <button class="btn ghost" id="add-withdrawal">− Withdraw / spend</button>
+      <button class="btn ghost" id="add-earlier">+ Earlier profit</button>
     </div>
     ${totalCommission>0 ? `<div class="chips-row"><span class="chips-label">Commission paid</span><span class="chip tabular">${fmtMoney(totalCommission)}</span><span class="set-sub">already deducted from the profit above</span></div>` : ''}
     ${months.length ? `<div class="chips-row"><span class="chips-label">By month</span>${months.map(m=>`<span class="chip tabular">${monthName(m)} <b style="color:${byMonth[m]>=0?'var(--green)':'var(--rust)'};">${byMonth[m]>=0?'+':''}${fmtMoney(byMonth[m])}</b></span>`).join('')}</div>` : ''}
@@ -2733,6 +2751,15 @@ function renderProfit(main){
           <div class="al-main"><div class="al-name">${esc(ipo?ipo.name:'IPO')}</div><div class="al-meta tabular">${esc(ap?ap.name:'—')} · ${fmtMoney(a.allottedAmount)}</div></div>
           <button class="btn sm ghost" data-sell="${a.id}">Record sale</button></div>`; }).join('')}
       </div>` : ''}
+
+    ${ledger.length ? `
+      <details class="set-tools" style="margin-top:14px;">
+        <summary>Withdrawals &amp; earlier profit (${ledger.length})</summary>
+        ${ledger.map(x=>`<div class="set-row" data-edit-ledger="${x.id}" style="cursor:pointer;">
+          <div><div class="set-label">${esc(x.note || (x.kind==='earlier' ? 'Profit before this app' : 'Withdrawal'))}</div><div class="set-sub">${fmtDate(x.date)} · ${x.kind==='earlier' ? 'earlier profit' : 'withdrawn'}</div></div>
+          <div class="tabular" style="font-weight:700;color:${x.kind==='earlier'?'var(--green)':'var(--rust)'};">${x.kind==='earlier'?'+':'−'}${fmtMoney(x.amount)} <span style="color:var(--ink-faint);">›</span></div>
+        </div>`).join('')}
+      </details>` : ''}
 
     <div class="section-label">By IPO</div>
     ${ipoGroups.length===0 ? `<div class="empty-state">${ICONS.profit}<div class="t">No sales recorded yet</div></div>` : `
@@ -2753,6 +2780,57 @@ function renderProfit(main){
   document.getElementById('add-sale').addEventListener('click', ()=>openSaleModal());
   main.querySelectorAll('[data-sell]').forEach(b=>b.addEventListener('click',()=>openSaleModal(b.dataset.sell)));
   main.querySelectorAll('[data-edit-sale]').forEach(el=>el.addEventListener('click',()=>openSaleModal(null, el.dataset.editSale)));
+  document.getElementById('add-withdrawal').addEventListener('click',()=>openLedgerModal('withdrawal'));
+  document.getElementById('add-earlier').addEventListener('click',()=>openLedgerModal('earlier'));
+  main.querySelectorAll('[data-edit-ledger]').forEach(el=>el.addEventListener('click',()=>{ const x=State.sales.find(v=>v.id===el.dataset.editLedger); if(x) openLedgerModal(x.kind, x.id); }));
+}
+function openLedgerModal(kind, editId){
+  const editing = editId ? State.sales.find(x=>x.id===editId) : null;
+  const isW = kind==='withdrawal';
+  openModal(`
+    <div class="modal">
+      <h3>${editing ? 'Edit' : ''} ${isW ? 'Withdraw / spend' : 'Earlier profit'}</h3>
+      <div class="set-sub" style="margin-bottom:10px;">${isW ? 'Money you took out of your profit or spent. It is deducted from your Available balance; your profit figure stays as earned.' : 'Profit you made from IPOs before using this app. It is added to your total profit. You can add more than one (for example one per year).'}</div>
+      <div class="grid" style="gap:10px;">
+        <label class="field">Amount (₹)<input type="number" id="l-amount" inputmode="decimal" placeholder="e.g. 5000" value="${editing?editing.amount:''}"></label>
+        <div class="grid cols-2">
+          <label class="field">${isW ? 'Date' : 'As of'}<input type="date" id="l-date" value="${editing?(editing.date||todayStr()):todayStr()}"></label>
+          <label class="field">${isW ? 'Note (optional)' : 'Label (optional)'}<input type="text" id="l-note" maxlength="60" placeholder="${isW ? 'e.g. rent, personal' : 'e.g. profit till Sept 2026'}" value="${editing?esc(editing.note||''):''}"></label>
+        </div>
+        <div id="l-after" class="set-sub" style="min-height:16px;"></div>
+      </div>
+      <div class="modal-actions">
+        ${editing ? `<button class="btn danger" id="l-del" style="margin-right:auto;">Delete</button>` : ''}
+        <button class="btn ghost" data-close="1">Cancel</button>
+        <button class="btn primary" id="l-save">${editing ? 'Save' : (isW ? 'Record' : 'Add')}</button>
+      </div>
+    </div>
+  `);
+  const amountEl = document.getElementById('l-amount');
+  const refresh = ()=>{
+    const amt = Number(amountEl.value)||0, el = document.getElementById('l-after');
+    if(!amt){ el.textContent=''; return; }
+    const base = availableBalance() - (editing ? (editing.kind==='withdrawal' ? -(Number(editing.amount)||0) : (Number(editing.amount)||0)) : 0);
+    const after = isW ? base - amt : base + amt;
+    el.style.color = after<0 ? 'var(--rust)' : 'var(--ink-faint)';
+    el.textContent = `Available after this: ${after<0?'−':''}${fmtMoney(Math.abs(after))}${isW && after<0 ? ' — more than your balance' : ''}`;
+  };
+  amountEl.addEventListener('input', refresh); refresh();
+  document.getElementById('l-save').addEventListener('click', async ()=>{
+    const amt = Number(amountEl.value);
+    if(!(amt>0)){ toast('Enter an amount'); return; }
+    const fields = { kind, amount:amt, date: document.getElementById('l-date').value || todayStr(), note: document.getElementById('l-note').value.trim() };
+    if(editing){ Object.assign(editing, fields); await idbPut('sales', editing); }
+    else { const obj = { id: uid(), ...fields }; await idbPut('sales', obj); State.sales.push(obj); }
+    closeModal(); toast(isW ? 'Withdrawal recorded' : 'Earlier profit saved'); render();
+  });
+  const del = document.getElementById('l-del');
+  if(del) del.addEventListener('click', async ()=>{
+    if(!window.confirm('Delete this entry?')) return;
+    await idbDelete('sales', editing.id);
+    State.sales = State.sales.filter(x=>x.id!==editing.id);
+    closeModal(); toast('Deleted'); render();
+  });
 }
 function openSaleModal(preselectId, editId){
   const editing = editId ? State.sales.find(x=>x.id===editId) : null;
