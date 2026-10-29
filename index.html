@@ -392,7 +392,7 @@ button.chip{ background:none; cursor:pointer; font-family:inherit; color:var(--i
    ========================================================= */
 
 /* ---------- ICONS (tiny inline svg set) ---------- */
-const APP_VERSION = '1.6';
+const APP_VERSION = '1.8';
 const ICONS = {
   back: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>`,
   list: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 6h13M8 12h13M8 18h13"/><path d="M3 6h.01M3 12h.01M3 18h.01"/></svg>`,
@@ -883,8 +883,9 @@ function totalRefundPendingAll(){
     return s + Math.max(0, stillPending);
   },0);
 }
+function saleNet(x){ return (x.saleAmount||0) - (x.investment||0) - (x.charges||0) - (x.commission||0); }   // profit after the commission you gave
 function totalProfitAll(){
-  return State.sales.reduce((s,sale)=> s + ((sale.saleAmount||0) - (sale.investment||0) - (sale.charges||0)), 0);
+  return State.sales.reduce((s,sale)=> s + saleNet(sale), 0);
 }
 function totalMoneyInBanks(){
   return State.banks.reduce((s,b)=>s+bankAvailable(b.id),0) + totalBlockedAll();
@@ -2694,12 +2695,13 @@ function openTransferModal(){
 /* ==================== PROFIT ==================== */
 function renderProfit(main){
   const totalProfit = totalProfitAll();
-  const net = (x)=>(x.saleAmount||0)-(x.investment||0)-(x.charges||0);
+  const net = saleNet;
+  const totalCommission = State.sales.reduce((t,x)=>t+(x.commission||0),0);
   const sales = State.sales.slice().sort((a,b)=>(b.saleDate||'').localeCompare(a.saleDate||''));
 
   // by IPO
   const byIpo = {};
-  sales.forEach(x=>{ const g=(byIpo[x.ipoId]=byIpo[x.ipoId]||{ipoId:x.ipoId,inv:0,sold:0,chg:0,n:0,rows:[],last:''}); g.inv+=x.investment||0; g.sold+=x.saleAmount||0; g.chg+=x.charges||0; g.n++; g.rows.push(x); if((x.saleDate||'')>g.last) g.last=x.saleDate||''; });
+  sales.forEach(x=>{ const g=(byIpo[x.ipoId]=byIpo[x.ipoId]||{ipoId:x.ipoId,inv:0,sold:0,chg:0,com:0,n:0,rows:[],last:''}); g.inv+=x.investment||0; g.sold+=x.saleAmount||0; g.chg+=x.charges||0; g.com+=x.commission||0; g.n++; g.rows.push(x); if((x.saleDate||'')>g.last) g.last=x.saleDate||''; });
   const ipoGroups = Object.values(byIpo).sort((a,b)=>b.last.localeCompare(a.last));
 
   // by month (running total)
@@ -2721,6 +2723,7 @@ function renderProfit(main){
       <div class="stat"><div class="label">Total profit</div><div class="value ${totalProfit>=0?'pos':'neg'} tabular">${fmtMoney(totalProfit)}</div></div>
       <div class="stat"><div class="label">This month</div><div class="value ${thisMonth>=0?'pos':'neg'} tabular">${fmtMoney(thisMonth)}</div></div>
     </div>
+    ${totalCommission>0 ? `<div class="chips-row"><span class="chips-label">Commission paid</span><span class="chip tabular">${fmtMoney(totalCommission)}</span><span class="set-sub">already deducted from the profit above</span></div>` : ''}
     ${months.length ? `<div class="chips-row"><span class="chips-label">By month</span>${months.map(m=>`<span class="chip tabular">${monthName(m)} <b style="color:${byMonth[m]>=0?'var(--green)':'var(--rust)'};">${byMonth[m]>=0?'+':''}${fmtMoney(byMonth[m])}</b></span>`).join('')}</div>` : ''}
 
     ${unsold.length ? `
@@ -2735,70 +2738,103 @@ function renderProfit(main){
     ${ipoGroups.length===0 ? `<div class="empty-state">${ICONS.profit}<div class="t">No sales recorded yet</div></div>` : `
       <div class="card" style="padding:4px 12px;">
         ${ipoGroups.map(g=>{
-          const ipo = ipoById(g.ipoId); const p = g.sold-g.inv-g.chg;
+          const ipo = ipoById(g.ipoId); const p = g.sold-g.inv-g.chg-g.com;
           return `<details class="pf-ipo">
             <summary>
               <div class="al-main"><div class="al-name">${esc(ipo?ipo.name:'IPO')}</div>
-              <div class="al-meta tabular">${g.n} sale${g.n>1?'s':''} · ${fmtMoney(g.inv)} → ${fmtMoney(g.sold)}${g.chg?` · charges ${fmtMoney(g.chg)}`:''}</div></div>
+              <div class="al-meta tabular">${g.n} sale${g.n>1?'s':''} · ${fmtMoney(g.inv)} → ${fmtMoney(g.sold)}${g.chg?` · charges ${fmtMoney(g.chg)}`:''}${g.com?` · commission ${fmtMoney(g.com)}`:''}</div></div>
               <div class="money ${p>=0?'plus':'minus'} tabular">${p>=0?'+':''}${fmtMoney(p)}</div>
             </summary>
-            ${g.rows.map(x=>{ const ap=applicantById(x.applicantId); const q=net(x); return `<div class="pf-row"><span>${esc(ap?ap.name:'—')} <span style="color:var(--ink-faint);font-size:11.5px;">· ${fmtDate(x.saleDate)}</span></span><span class="tabular" style="color:${q>=0?'var(--green)':'var(--rust)'};">${q>=0?'+':''}${fmtMoney(q)}</span></div>`; }).join('')}
+            ${g.rows.map(x=>{ const ap=applicantById(x.applicantId); const q=net(x); return `<div class="pf-row" data-edit-sale="${x.id}" style="cursor:pointer;"><span>${esc(ap?ap.name:'—')} <span style="color:var(--ink-faint);font-size:11.5px;">· ${fmtDate(x.saleDate)}${x.commission?` · commission ${fmtMoney(x.commission)}`:''}</span></span><span class="tabular" style="color:${q>=0?'var(--green)':'var(--rust)'};">${q>=0?'+':'−'}${fmtMoney(Math.abs(q))} <span style="color:var(--ink-faint);">›</span></span></div>`; }).join('')}
           </details>`;
         }).join('')}
       </div>`}
   `;
   document.getElementById('add-sale').addEventListener('click', ()=>openSaleModal());
   main.querySelectorAll('[data-sell]').forEach(b=>b.addEventListener('click',()=>openSaleModal(b.dataset.sell)));
+  main.querySelectorAll('[data-edit-sale]').forEach(el=>el.addEventListener('click',()=>openSaleModal(null, el.dataset.editSale)));
 }
-function openSaleModal(preselectId){
-  const allottedApps = State.applications.filter(a=>(a.allottedAmount||0)>0);
+function openSaleModal(preselectId, editId){
+  const editing = editId ? State.sales.find(x=>x.id===editId) : null;
+  const allottedApps = State.applications.filter(a=>(a.allottedAmount||0)>0 || (editing && a.id===editing.applicationId));
+  const startApp = editing ? editing.applicationId : preselectId;
   openModal(`
     <div class="modal">
-      <h3>Record sale</h3>
+      <h3>${editing ? 'Edit sale' : 'Record sale'}</h3>
+      <div class="set-sub" style="margin-bottom:10px;">Enter what actually reached your bank after selling. Profit is worked out for you; add any commission you’re giving to see your net profit.</div>
       <div class="grid" style="gap:10px;">
         <label class="field">Application (IPO · Applicant)
-          <select id="s-app">
+          <select id="s-app" ${editing?'disabled':''}>
             <option value="">— select —</option>
             ${allottedApps.map(a=>{
               const ipo=ipoById(a.ipoId), ap=applicantById(a.applicantId);
-              return `<option value="${a.id}" ${a.id===preselectId?'selected':''}>${esc(ipo?ipo.name:'IPO')} · ${esc(ap?ap.name:'—')} (Allotted ${fmtMoney(a.allottedAmount)})</option>`;
+              const cat = (a.category && a.category!=='retail') ? ' · '+catName(a.category) : '';
+              return `<option value="${a.id}" ${a.id===startApp?'selected':''}>${esc(ipo?ipo.name:'IPO')} · ${esc(ap?ap.name:'—')}${cat} (Allotted ${fmtMoney(a.allottedAmount)})</option>`;
             }).join('')}
           </select>
         </label>
+        <label class="field">Amount received in bank (₹)<input type="number" id="s-received" inputmode="decimal" placeholder="e.g. 7850" value="${editing?editing.saleAmount:''}"></label>
         <div class="grid cols-2">
-          <label class="field">Investment amount (₹)<input type="number" id="s-invest" placeholder="0"></label>
-          <label class="field">Sale amount (₹)<input type="number" id="s-sale" placeholder="0"></label>
+          <label class="field">Invested (₹)<input type="number" id="s-invest" inputmode="decimal" placeholder="0" value="${editing?editing.investment:''}"></label>
+          <label class="field">Sale date<input type="date" id="s-date" value="${editing?(editing.saleDate||todayStr()):todayStr()}"></label>
         </div>
-        <div class="grid cols-2">
-          <label class="field">Charges (₹)<input type="number" id="s-charges" value="0"></label>
-          <label class="field">Sale date<input type="date" id="s-date" value="${todayStr()}"></label>
-        </div>
+        <div id="s-before" style="font-size:13.5px;font-weight:700;min-height:18px;"></div>
+        <label class="field"><span id="s-com-label">Commission to give (₹, optional)</span><input type="number" id="s-commission" inputmode="decimal" placeholder="0" value="${editing && editing.commission ? editing.commission : ''}"></label>
+        <div id="s-net" style="font-size:15px;font-weight:800;min-height:20px;"></div>
       </div>
       <div class="modal-actions">
+        ${editing ? `<button class="btn danger" id="del-sale" style="margin-right:auto;">Delete</button>` : ''}
         <button class="btn ghost" data-close="1">Cancel</button>
-        <button class="btn primary" id="save-sale">Record sale</button>
+        <button class="btn primary" id="save-sale">${editing ? 'Save' : 'Record sale'}</button>
       </div>
     </div>
   `);
-  if(preselectId){ const pa=State.applications.find(a=>a.id===preselectId); if(pa) document.getElementById('s-invest').value = pa.allottedAmount||''; }
-  document.getElementById('s-app').addEventListener('change',(e)=>{
-    const app = State.applications.find(a=>a.id===e.target.value);
-    if(app) document.getElementById('s-invest').value = app.allottedAmount||'';
-  });
-  document.getElementById('save-sale').addEventListener('click', async ()=>{
-    const appId = document.getElementById('s-app').value;
-    if(!appId){ toast('Select an application'); return; }
+  const sign = (n)=> (n>=0?'+':'−')+fmtMoney(Math.abs(n));
+  const refresh = ()=>{
+    const appId = document.getElementById('s-app').value || startApp;
     const app = State.applications.find(a=>a.id===appId);
-    const obj = {
-      id: uid(), ipoId: app.ipoId, applicantId: app.applicantId, applicationId: app.id,
+    const who = app ? (applicantById(app.applicantId)||{}).name : '';
+    document.getElementById('s-com-label').textContent = who ? `Commission to give ${who} (₹, optional)` : 'Commission to give (₹, optional)';
+    const rec = document.getElementById('s-received').value, inv = Number(document.getElementById('s-invest').value)||0, com = Number(document.getElementById('s-commission').value)||0;
+    const before = document.getElementById('s-before'), net = document.getElementById('s-net');
+    if(rec===''){ before.textContent=''; net.textContent=''; return; }
+    const p = (Number(rec)||0) - inv;
+    before.style.color = p>=0 ? 'var(--green)' : 'var(--rust)';
+    before.textContent = `Profit before commission: ${sign(p)}` + (inv>0 ? ` (${p>=0?'+':'−'}${Math.abs(p/inv*100).toFixed(1)}%)` : '');
+    const n = p - com;
+    net.style.color = n>=0 ? 'var(--green)' : 'var(--rust)';
+    net.textContent = com>0 ? `Your net profit: ${sign(n)}` : '';
+  };
+  const fill = (appId)=>{ const app = State.applications.find(a=>a.id===appId); if(app && !editing) document.getElementById('s-invest').value = app.allottedAmount||''; refresh(); };
+  if(startApp) fill(startApp); else refresh();
+  document.getElementById('s-app').addEventListener('change',(e)=>fill(e.target.value));
+  ['s-received','s-invest','s-commission'].forEach(id=>document.getElementById(id).addEventListener('input', refresh));
+  refresh();
+  document.getElementById('save-sale').addEventListener('click', async ()=>{
+    const appId = editing ? editing.applicationId : document.getElementById('s-app').value;
+    if(!appId){ toast('Select an application'); return; }
+    const recv = document.getElementById('s-received').value;
+    if(recv===''){ toast('Enter the amount received in your bank'); return; }
+    const app = State.applications.find(a=>a.id===appId);
+    const fields = {
       investment: Number(document.getElementById('s-invest').value)||0,
-      saleAmount: Number(document.getElementById('s-sale').value)||0,
-      charges: Number(document.getElementById('s-charges').value)||0,
+      saleAmount: Number(recv)||0,          // what reached the bank, i.e. already after charges and taxes
+      commission: Number(document.getElementById('s-commission').value)||0,
       saleDate: document.getElementById('s-date').value || todayStr(),
     };
-    await idbPut('sales', obj);
-    State.sales.push(obj);
-    closeModal(); toast('Sale recorded'); render();
+    if(editing){ Object.assign(editing, fields); await idbPut('sales', editing); toast('Sale updated'); }
+    else {
+      const obj = { id: uid(), ipoId: app.ipoId, applicantId: app.applicantId, applicationId: app.id, charges: 0, ...fields };
+      await idbPut('sales', obj); State.sales.push(obj); toast('Sale recorded');
+    }
+    closeModal(); render();
+  });
+  const del = document.getElementById('del-sale');
+  if(del) del.addEventListener('click', async ()=>{
+    if(!window.confirm('Delete this sale record?')) return;
+    await idbDelete('sales', editing.id);
+    State.sales = State.sales.filter(x=>x.id!==editing.id);
+    closeModal(); toast('Sale deleted'); render();
   });
 }
 
