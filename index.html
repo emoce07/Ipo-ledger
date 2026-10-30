@@ -397,7 +397,7 @@ button.chip{ background:none; cursor:pointer; font-family:inherit; color:var(--i
    ========================================================= */
 
 /* ---------- ICONS (tiny inline svg set) ---------- */
-const APP_VERSION = '2.1';
+const APP_VERSION = '2.2';
 const ICONS = {
   back: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>`,
   list: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 6h13M8 12h13M8 18h13"/><path d="M3 6h.01M3 12h.01M3 18h.01"/></svg>`,
@@ -533,7 +533,8 @@ const State = {
 };
 
 function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,8); }
-function todayStr(){ return new Date().toISOString().slice(0,10); }
+function localISO(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function todayStr(){ return localISO(new Date()); }   // local midnight, not UTC
 function fmtMoney(n){
   n = Number(n)||0;
   const neg = n<0; n = Math.abs(n);
@@ -736,23 +737,6 @@ function gmpTrend(ipo){                     // GMP % now, and change vs the prev
   return `<span class="gmpchip tabular" style="color:${col};">GMP ${now>0?'+':''}${now}%${arrow}</span>`;
 }
 function daysSince(){ return 0; }
-function ipoStatus(ipo){
-  const openD = daysDiff(ipo.openDate);
-  const closeD = daysDiff(ipo.closeDate);
-  const allotD = daysDiff(ipo.allotmentDate);
-  const listD = daysDiff(ipo.listingDate);
-  if(listD!==null && listD<=0) return {key:'listed', label: listD===0?'Listing today':'Listed'};
-  if(listD===1) return {key:'listed', label:'Listing tomorrow'};
-  if(allotD!==null && allotD<=0) return {key:'allot', label: allotD===0?'Allotment today':'Allotment out'};
-  if(allotD===1) return {key:'allot', label:'Allotment tomorrow'};
-  if(closeD!==null && closeD<0) return {key:'closed', label:'Closed'};
-  if(closeD===0) return {key:'closing', label:'Closing today'};
-  if(closeD===1) return {key:'closing', label:'Closing tomorrow'};
-  if(openD!==null && openD<=0 && (closeD===null||closeD>=0)) return {key:'open', label:'Open now'};
-  if(openD===1) return {key:'upcoming', label:'Opens tomorrow'};
-  if(openD!==null && openD>1) return {key:'upcoming', label:`Opens in ${openD}d`};
-  return {key:'closed', label:'—'};
-}
 function lotGain(ipo){                       // estimated gain per lot at today's GMP
   const lot = Number(ipo.lotSize)||0; if(!lot) return null;
   let per = null;
@@ -839,16 +823,17 @@ function bankLedger(bankId){
   // sale proceeds credited to this account
   realSales().filter(x=>x.bankId===bankId).forEach(x=>{
     const ipo = ipoById(x.ipoId);
-    entries.push({ date:x.saleDate, label:`${ipo?ipo.name:'IPO'} — sale proceeds (${applicantById(x.applicantId)?.name||'—'})`, amount:x.saleAmount||0 });
+    entries.push({ date:x.saleDate, label:`${ipo?ipo.name:'IPO'} — sale proceeds (${applicantById(x.applicantId)?.name||'—'})`, amount:x.saleAmount||0, grp:`s|${x.ipoId}|${x.saleDate}`, glabel:`${ipo?ipo.name:'IPO'} — sale proceeds`, who:(applicantById(x.applicantId)||{}).name||'—' });
   });
 
   // applications: blocked amount leaves bank when applied; refund/unblock returns money
   State.applications.filter(a=>a.bankId===bankId).forEach(a=>{
     const ipo = ipoById(a.ipoId);
-    entries.push({ date:a.appliedDate, label:`${ipo?ipo.name:'IPO'} — applied (${applicantById(a.applicantId)?.name||'—'})`, amount:-(a.amount||0) });
+    const who = (applicantById(a.applicantId)||{}).name||'—';
+    entries.push({ date:a.appliedDate, label:`${ipo?ipo.name:'IPO'} — applied (${who})`, amount:-(a.amount||0), grp:`a|${a.ipoId}|${a.appliedDate}`, glabel:`${ipo?ipo.name:'IPO'} — applied`, who });
     const refunded = a.refundedAmount||0;
     if(refunded>0){
-      entries.push({ date:a.refundDate||a.appliedDate, label:`${ipo?ipo.name:'IPO'} — refund/unblock (${applicantById(a.applicantId)?.name||'—'})`, amount:refunded });
+      entries.push({ date:a.refundDate||a.appliedDate, label:`${ipo?ipo.name:'IPO'} — refund/unblock (${who})`, amount:refunded, grp:`r|${a.ipoId}|${a.refundDate||a.appliedDate}`, glabel:`${ipo?ipo.name:'IPO'} — refund/unblock`, who });
     }
   });
 
@@ -1824,20 +1809,37 @@ function renderBankDetail(bankId){
   const detail = document.getElementById('bank-detail');
   if(!bank || !detail) return;
   const {entries, current} = bankLedger(bankId);
+  State._ledgerOpen = State._ledgerOpen || {};
+  // merge entries of the same IPO + day + kind into one row (tap to expand); keep everything else as is
+  const rows = [], idx = {};
+  entries.forEach(e=>{
+    if(!e.grp){ rows.push({ date:e.date, label:e.label, amount:e.amount, items:[e] }); return; }
+    if(!(e.grp in idx)){ idx[e.grp] = rows.length; rows.push({ grp:e.grp, date:e.date, label:e.glabel, amount:0, items:[] }); }
+    const r = rows[idx[e.grp]]; r.amount += e.amount; r.items.push(e);
+  });
+  rows.reverse();                                       // newest first
+  const LIMIT = 8, all = !!State._histAll, shown = all ? rows : rows.slice(0, LIMIT);
+  const money = (n)=>`${n>=0?'+':''}${fmtMoney(n)}`;
   detail.innerHTML = `
     <div class="row" style="margin-top:18px;"><div class="section-label" style="margin:0;">${esc(bankLabel(bank))} — money history</div>
       <button class="btn sm ghost" id="fix-balance">Match balance</button></div>
     <div class="card">
-      ${entries.map(e=>`
-        <div class="list-item">
-          <div class="main"><div class="title" style="font-weight:500;font-size:13.5px;">${esc(e.label)}</div><div class="meta">${fmtDate(e.date)}</div></div>
-          <div class="money ${e.amount>=0?'plus':'minus'} tabular">${e.amount>=0?'+':''}${fmtMoney(e.amount)}</div>
-        </div>
-      `).join('')}
       <div class="list-item"><div class="title">Current available</div><div class="money gold tabular" style="color:var(--gold);">${fmtMoney(current)}</div></div>
+      ${shown.map(r=>{
+        const multi = r.items.length>1, open = multi && State._ledgerOpen[r.grp];
+        return `
+        <div class="list-item" ${multi?`data-grp="${esc(r.grp)}" style="cursor:pointer;"`:''}>
+          <div class="main"><div class="title" style="font-weight:500;font-size:13.5px;">${esc(r.label)}${multi?` <span class="al-cat">${r.items.length}×</span> <span style="color:var(--ink-faint);">${open?'⌃':'⌄'}</span>`:''}</div><div class="meta">${fmtDate(r.date)}</div></div>
+          <div class="money ${r.amount>=0?'plus':'minus'} tabular">${money(r.amount)}</div>
+        </div>
+        ${open ? r.items.map(i=>`<div class="list-item" style="padding-left:18px;"><div class="main"><div class="meta">${esc(i.who||'')}</div></div><div class="money ${i.amount>=0?'plus':'minus'} tabular" style="font-size:13px;">${money(i.amount)}</div></div>`).join('') : ''}`;
+      }).join('')}
+      ${rows.length>LIMIT ? `<button class="btn ghost block" id="hist-toggle" style="margin-top:8px;">${all?'Show less':`Show all (${rows.length} rows)`}</button>` : ''}
     </div>
   `;
   document.getElementById('fix-balance').addEventListener('click', ()=>openBalanceFixModal(bankId));
+  const tg = document.getElementById('hist-toggle'); if(tg) tg.addEventListener('click', ()=>{ State._histAll = !State._histAll; renderBankDetail(bankId); });
+  detail.querySelectorAll('[data-grp]').forEach(el=>el.addEventListener('click', ()=>{ State._ledgerOpen[el.dataset.grp] = !State._ledgerOpen[el.dataset.grp]; renderBankDetail(bankId); }));
 }
 function openBalanceFixModal(bankId){
   const bank = bankById(bankId), cur = bankAvailable(bankId);
@@ -1848,7 +1850,7 @@ function openBalanceFixModal(bankId){
       <div class="set-sub tabular" style="margin-bottom:8px;">The app currently has ${fmtMoney(cur)}</div>
       <label class="field">Actual balance now (₹)<input type="number" id="fb-actual" inputmode="decimal" placeholder="${cur}"></label>
       <div id="fb-diff" class="set-sub" style="min-height:16px;margin-top:6px;"></div>
-      <label class="field" style="margin-top:8px;">Note (optional)<input type="text" id="fb-note" placeholder="e.g. interest, charges"></label>
+      <label class="field" style="margin-top:8px;">Note (optional)<input type="text" id="fb-note" placeholder="e.g. other spending, interest, charges"></label>
       <div class="modal-actions"><button class="btn ghost" data-close="1">Cancel</button><button class="btn primary" id="fb-save">Record difference</button></div>
     </div>`);
   const input = document.getElementById('fb-actual');
@@ -1861,7 +1863,7 @@ function openBalanceFixModal(bankId){
     if(input.value===''){ toast('Enter the actual balance'); return; }
     const d = Math.round(((Number(input.value)||0) - cur)*100)/100;
     if(d===0){ closeModal(); toast('Already matches'); return; }
-    const note = document.getElementById('fb-note').value.trim() || 'Balance adjustment';
+    const note = document.getElementById('fb-note').value.trim() || (d<0 ? 'Other spending / charges' : 'Other income / interest');
     const obj = d>0 ? { id:uid(), fromBankId:'', toBankId:bankId, amount:d, date:todayStr(), note }
                     : { id:uid(), fromBankId:bankId, toBankId:'', amount:-d, date:todayStr(), note };
     await idbPut('transfers', obj); State.transfers.push(obj);
@@ -2263,7 +2265,7 @@ function isoToDate(s){
   if(/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
   const d = new Date(s);
   if(isNaN(d)) return '';
-  return d.toISOString().slice(0,10);
+  return localISO(d);
 }
 
 async function reloadLatestVersion(){
