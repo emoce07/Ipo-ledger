@@ -384,6 +384,16 @@ button.chip{ background:none; cursor:pointer; font-family:inherit; color:var(--i
 .bank-grp{ display:flex; justify-content:space-between; align-items:baseline; gap:10px; padding:12px 2px 4px; font-size:12px; font-weight:800; letter-spacing:.4px; text-transform:uppercase; color:var(--gold); border-top:1px solid var(--line); }
 .bank-grp:first-child{ border-top:none; }
 .bank-grp .tabular{ font-weight:600; letter-spacing:0; text-transform:none; color:var(--ink-faint); font-size:11.5px; }
+
+/* --- v13: collapsible bank statements --- */
+.chev{ display:inline-block; font-size:20px; line-height:1; transition:transform .15s ease; }
+.chev.open{ transform:rotate(180deg); }
+.chev-btn{ color:var(--ink); }
+.bank-item{ border-bottom:1px solid var(--line); }
+.bank-item:last-child{ border-bottom:none; }
+.bank-item > .list-item{ border-bottom:none; }
+.bank-stmt{ padding:0 0 10px; }
+.bank-stmt .card{ background:transparent; border:none; padding:0; box-shadow:none; }
 </style>
 </head>
 <body>
@@ -397,7 +407,7 @@ button.chip{ background:none; cursor:pointer; font-family:inherit; color:var(--i
    ========================================================= */
 
 /* ---------- ICONS (tiny inline svg set) ---------- */
-const APP_VERSION = '2.3';
+const APP_VERSION = '2.4';
 const ICONS = {
   back: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>`,
   list: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 6h13M8 12h13M8 18h13"/><path d="M3 6h.01M3 12h.01M3 18h.01"/></svg>`,
@@ -1706,17 +1716,22 @@ function confirmUnapply(appId){
 
 /* ==================== BANKS ==================== */
 function renderBanks(main){
+  State._bankOpen = State._bankOpen || {};
   const row = (b)=>{
-    const avail = bankAvailable(b.id), blocked = bankBlocked(b.id);
-    return `<div class="list-item">
-      <div class="main" data-view-bank="${b.id}" style="cursor:pointer;flex:1;">
-        <div class="title">${esc(b.name)}${b.isPrimary?' <span class="al-cat">Primary</span>':''}</div>
-        <div class="meta tabular">Available ${fmtMoney(avail)} · Blocked ${fmtMoney(blocked)}</div>
+    const avail = bankAvailable(b.id), blocked = bankBlocked(b.id), open = !!State._bankOpen[b.id];
+    return `<div class="bank-item">
+      <div class="list-item">
+        <div class="main" data-toggle-bank="${b.id}" style="cursor:pointer;flex:1;">
+          <div class="title">${esc(b.name)}${b.isPrimary?' <span class="al-cat">Primary</span>':''}</div>
+          <div class="meta tabular">Available ${fmtMoney(avail)} · Blocked ${fmtMoney(blocked)}</div>
+        </div>
+        <div class="actions">
+          <button class="iconbtn chev-btn" data-toggle-bank="${b.id}" title="${open?'Hide':'Show'} statement" aria-expanded="${open}"><span class="chev ${open?'open':''}">⌄</span></button>
+          <button class="iconbtn" data-edit-bank="${b.id}">${ICONS.edit}</button>
+          <button class="iconbtn" data-del-bank="${b.id}">${ICONS.trash}</button>
+        </div>
       </div>
-      <div class="actions">
-        <button class="iconbtn" data-edit-bank="${b.id}">${ICONS.edit}</button>
-        <button class="iconbtn" data-del-bank="${b.id}">${ICONS.trash}</button>
-      </div>
+      ${open ? `<div class="bank-stmt" id="stmt-${b.id}"></div>` : ''}
     </div>`;
   };
   main.innerHTML = `
@@ -1726,7 +1741,7 @@ function renderBanks(main){
         <button class="btn primary sm" id="add-bank">${ICONS.plus} Add</button>
       </div>
     </div>
-    <p class="page-sub">Accounts and sub-accounts (like your Slice atoms) — tap one to see its money history</p>
+    <p class="page-sub">Tap the arrow on an account to open or close its statement</p>
     ${State.banks.length===0 ? `<div class="empty-state">${ICONS.bank}<div class="t">No banks yet</div><div class="s">Add your first bank to start tracking money.</div></div>` : `
       <div class="card" style="padding:6px 12px;">
         ${groupBanks().map(g=>{
@@ -1736,14 +1751,17 @@ function renderBanks(main){
         }).join('')}
       </div>
     `}
-    <div id="bank-detail"></div>
   `;
   document.getElementById('add-bank').addEventListener('click',()=>openBankModal(null));
   const mv = document.getElementById('move-money'); if(mv) mv.addEventListener('click',()=>openTransferModal());
   main.querySelectorAll('[data-edit-bank]').forEach(el=>el.addEventListener('click',()=>openBankModal(bankById(el.dataset.editBank))));
   main.querySelectorAll('[data-del-bank]').forEach(el=>el.addEventListener('click',()=>confirmDeleteBank(el.dataset.delBank)));
-  main.querySelectorAll('[data-view-bank]').forEach(el=>el.addEventListener('click',()=>renderBankDetail(el.dataset.viewBank)));
+  main.querySelectorAll('[data-toggle-bank]').forEach(el=>el.addEventListener('click',()=>{
+    const id = el.dataset.toggleBank; State._bankOpen[id] = !State._bankOpen[id]; renderBanks(main);
+  }));
+  Object.keys(State._bankOpen).filter(id=>State._bankOpen[id]).forEach(id=>renderBankStatement(id));
 }
+
 function openBackfillModal(){
   const pb = primaryBank(), list = unassignedSales(), total = list.reduce((t,x)=>t+(x.saleAmount||0),0);
   if(!pb){ toast('Set a primary account first: Banks → edit an account → Primary account'); return; }
@@ -1821,9 +1839,9 @@ function confirmDeleteBank(id){
     closeModal(); toast('Bank deleted'); render();
   });
 }
-function renderBankDetail(bankId){
+function renderBankStatement(bankId){
   const bank = bankById(bankId);
-  const detail = document.getElementById('bank-detail');
+  const detail = document.getElementById('stmt-'+bankId);
   if(!bank || !detail) return;
   const {entries, current} = bankLedger(bankId);
   State._ledgerOpen = State._ledgerOpen || {};
@@ -1835,10 +1853,11 @@ function renderBankDetail(bankId){
     const r = rows[idx[e.grp]]; r.amount += e.amount; r.items.push(e);
   });
   rows.reverse();                                       // newest first
-  const LIMIT = 8, all = !!State._histAll, shown = all ? rows : rows.slice(0, LIMIT);
+  State._histAllMap = State._histAllMap || {};
+  const LIMIT = 8, all = !!State._histAllMap[bankId], shown = all ? rows : rows.slice(0, LIMIT);
   const money = (n)=>`${n>=0?'+':''}${fmtMoney(n)}`;
   detail.innerHTML = `
-    <div class="row" style="margin-top:18px;"><div class="section-label" style="margin:0;">${esc(bankLabel(bank))} — money history</div>
+    <div class="row" style="margin:8px 0 6px;"><div class="section-label" style="margin:0;">Statement</div>
       <button class="btn sm ghost" id="fix-balance">Match balance</button></div>
     <div class="card">
       <div class="list-item"><div class="title">Current available</div><div class="money gold tabular" style="color:var(--gold);">${fmtMoney(current)}</div></div>
@@ -1855,8 +1874,12 @@ function renderBankDetail(bankId){
     </div>
   `;
   document.getElementById('fix-balance').addEventListener('click', ()=>openBalanceFixModal(bankId));
-  const tg = document.getElementById('hist-toggle'); if(tg) tg.addEventListener('click', ()=>{ State._histAll = !State._histAll; renderBankDetail(bankId); });
-  detail.querySelectorAll('[data-grp]').forEach(el=>el.addEventListener('click', ()=>{ State._ledgerOpen[el.dataset.grp] = !State._ledgerOpen[el.dataset.grp]; renderBankDetail(bankId); }));
+  const tg = document.getElementById('hist-toggle'); if(tg) tg.addEventListener('click', ()=>{ State._histAllMap[bankId] = !State._histAllMap[bankId]; renderBankStatement(bankId); });
+  detail.querySelectorAll('[data-grp]').forEach(el=>el.addEventListener('click', ()=>{ State._ledgerOpen[el.dataset.grp] = !State._ledgerOpen[el.dataset.grp]; renderBankStatement(bankId); }));
+}
+function renderBankDetail(bankId){           // open this account's statement (used after "Match balance")
+  State._bankOpen = State._bankOpen || {}; State._bankOpen[bankId] = true;
+  if(document.getElementById('stmt-'+bankId)) renderBankStatement(bankId); else render();
 }
 function openBalanceFixModal(bankId){
   const bank = bankById(bankId), cur = bankAvailable(bankId);
