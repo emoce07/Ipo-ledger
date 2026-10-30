@@ -397,7 +397,7 @@ button.chip{ background:none; cursor:pointer; font-family:inherit; color:var(--i
    ========================================================= */
 
 /* ---------- ICONS (tiny inline svg set) ---------- */
-const APP_VERSION = '2.2';
+const APP_VERSION = '2.3';
 const ICONS = {
   back: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>`,
   list: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 6h13M8 12h13M8 18h13"/><path d="M3 6h.01M3 12h.01M3 18h.01"/></svg>`,
@@ -858,6 +858,23 @@ function totalHeldInShares(){                    // allotted but not sold yet
 }
 function primaryBank(){ return State.banks.find(b=>b.isPrimary) || null; }
 function unassignedSales(){ return realSales().filter(x=>!x.bankId); }
+function ipoStatus(ipo){
+  const openD = daysDiff(ipo.openDate);
+  const closeD = daysDiff(ipo.closeDate);
+  const allotD = daysDiff(ipo.allotmentDate);
+  const listD = daysDiff(ipo.listingDate);
+  if(listD!==null && listD<=0) return {key:'listed', label: listD===0?'Listing today':'Listed'};
+  if(listD===1) return {key:'listed', label:'Listing tomorrow'};
+  if(allotD!==null && allotD<=0) return {key:'allot', label: allotD===0?'Allotment today':'Allotment out'};
+  if(allotD===1) return {key:'allot', label:'Allotment tomorrow'};
+  if(closeD!==null && closeD<0) return {key:'closed', label:'Closed'};
+  if(closeD===0) return {key:'closing', label:'Closing today'};
+  if(closeD===1) return {key:'closing', label:'Closing tomorrow'};
+  if(openD!==null && openD<=0 && (closeD===null||closeD>=0)) return {key:'open', label:'Open now'};
+  if(openD===1) return {key:'upcoming', label:'Opens tomorrow'};
+  if(openD!==null && openD>1) return {key:'upcoming', label:`Opens in ${openD}d`};
+  return {key:'closed', label:'—'};
+}
 
 function ipoApplications(ipoId){ return State.applications.filter(a=>a.ipoId===ipoId); }
 function ipoLotAmount(ipo){
