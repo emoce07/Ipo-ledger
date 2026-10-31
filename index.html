@@ -394,6 +394,9 @@ button.chip{ background:none; cursor:pointer; font-family:inherit; color:var(--i
 .bank-item > .list-item{ border-bottom:none; }
 .bank-stmt{ padding:0 0 10px; }
 .bank-stmt .card{ background:transparent; border:none; padding:0; box-shadow:none; }
+
+/* --- v14: funds --- */
+.al-cat.fund{ color:var(--seal); border-color:var(--seal); }
 </style>
 </head>
 <body>
@@ -407,7 +410,7 @@ button.chip{ background:none; cursor:pointer; font-family:inherit; color:var(--i
    ========================================================= */
 
 /* ---------- ICONS (tiny inline svg set) ---------- */
-const APP_VERSION = '2.4';
+const APP_VERSION = '2.5';
 const ICONS = {
   back: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>`,
   list: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 6h13M8 12h13M8 18h13"/><path d="M3 6h.01M3 12h.01M3 18h.01"/></svg>`,
@@ -782,10 +785,11 @@ async function removeDemoData(){
 const CATEGORIES = [['retail','Retail'],['shareholder','Shareholder'],['employee','Employee'],['hni','HNI / NII']];
 function catName(k){ const c=CATEGORIES.find(x=>x[0]===k); return c?c[1]:'Retail'; }
 function ipoPricePerShare(ipo){ return Number(ipo.maxPrice) || parseMaxPriceFromBand(ipo.priceBand) || 0; }
-function catTag(a){                         // shown only when it tells you something: non-retail, or the same person applied in more than one category
+function catTag(a){                         // category (non-retail / multiple) + fund tag
   const k = a.category || 'retail';
   const multi = State.applications.filter(x=>x.ipoId===a.ipoId && x.applicantId===a.applicantId).length>1;
-  return (k!=='retail' || multi) ? `<span class="al-cat">${esc(catName(k))}</span>` : '';
+  const f = fundById(a.fundId);
+  return ((k!=='retail' || multi) ? `<span class="al-cat">${esc(catName(k))}</span>` : '') + (f ? `<span class="al-cat fund">${esc(f.name)}</span>` : '');
 }
 function isRecentIpo(ipo, hasPending, now){
   if(hasPending) return true;                                   // you still have a result to enter
@@ -821,8 +825,9 @@ function ipoById(id){ return State.ipos.find(i=>i.id===id); }
 function bankLedger(bankId){
   const bank = bankById(bankId);
   if(!bank) return { entries:[], current:0 };
-  const entries = [];
-  entries.push({ date: bank.createdDate||todayStr(), label:'Opening balance', amount: bank.openingBalance||0, running:0 });
+  let entries = [];
+  const base = bank.baselineDate || '';
+  entries.push({ date: base || bank.createdDate || todayStr(), label: base ? 'Opening balance (reset)' : 'Opening balance', amount: bank.openingBalance||0, running:0, opening:true });
 
   // transfers out/in
   State.transfers.forEach(t=>{
@@ -847,6 +852,7 @@ function bankLedger(bankId){
     }
   });
 
+  if(base) entries = entries.filter(e=> e.opening || (e.date||'') >= base);        // everything before a reset is already inside the opening balance
   entries.sort((x,y)=> (x.date||'').localeCompare(y.date||''));
   let running = 0;
   entries.forEach(e=>{ running += e.amount; e.running = running; });
@@ -926,7 +932,42 @@ function earlierProfitTotal(){ return ledgerEntries('earlier').reduce((t,x)=>t+(
 function withdrawnTotal(){ return ledgerEntries('withdrawal').reduce((t,x)=>t+(Number(x.amount)||0),0); }
 function earnedProfit(){ return totalProfitAll() + earlierProfitTotal(); }          // all-time profit incl. profit from before the app
 function availableBalance(){ return earnedProfit() - withdrawnTotal(); }            // what's left after withdrawals / expenses
-function saleNet(x){ return (x.saleAmount||0) - (x.investment||0) - (x.charges||0) - (x.commission||0); }   // profit after the commission you gave
+function allFunds(){ return State.sales.filter(x=>x.kind==='fund'); }
+function fundById(id){ return id ? (State.sales.find(x=>x.kind==='fund' && x.id===id) || null) : null; }
+function fundFlows(fundId){ return State.sales.filter(x=>x.kind==='fundflow' && x.fundId===fundId); }
+function fundSharePct(f){ return (f && f.mySharePct!=null && f.mySharePct!=='') ? Number(f.mySharePct) : 100; }
+function saleTotalProfit(x){ return (x.saleAmount||0) - (x.investment||0) - (x.charges||0) - (x.commission||0); }   // after commission
+function saleNet(x){ const pct = (x.mySharePct==null || x.mySharePct==='') ? 100 : Number(x.mySharePct); return saleTotalProfit(x)*pct/100; }   // YOUR share
+function salePartnerShare(x){ return saleTotalProfit(x) - saleNet(x); }
+function saleFundId(x){ return x.fundId || ((State.applications.find(a=>a.id===x.applicationId)||{}).fundId) || ''; }
+function fundCapital(fundId){ const f=fundById(fundId); return (Number(f&&f.capital)||0) + fundFlows(fundId).filter(x=>x.type==='capital').reduce((t,x)=>t+(Number(x.amount)||0),0); }
+function fundUse(fundId){
+  const apps = State.applications.filter(a=>a.fundId===fundId), ids = new Set(apps.map(a=>a.id));
+  const sales = realSales().filter(x=>ids.has(x.applicationId)), sold = new Set(sales.map(x=>x.applicationId));
+  let applied=0, refunded=0, pending=0, shares=0;
+  apps.forEach(a=>{
+    applied += a.amount||0; refunded += a.refundedAmount||0;
+    if((a.allotmentStatus||'pending')==='pending') pending += a.amount||0;
+    if((a.allottedAmount||0)>0 && !sold.has(a.id)) shares += a.allottedAmount||0;
+  });
+  const soldBack = sales.reduce((t,x)=>t+(x.investment||0),0);          // your capital comes back when shares are sold
+  return { pending, shares, free: fundCapital(fundId) - applied + refunded + soldBack };
+}
+function fundProfit(fundId){
+  const sales = realSales().filter(x=>saleFundId(x)===fundId);
+  return { mine: sales.reduce((t,x)=>t+saleNet(x),0), partner: sales.reduce((t,x)=>t+salePartnerShare(x),0) };
+}
+function partnerHeld(fundId){                                           // partner's profit you are holding for them
+  const fromSales = realSales().filter(x=>saleFundId(x)===fundId).reduce((t,x)=>t+salePartnerShare(x),0);
+  const flows = fundFlows(fundId).filter(x=>x.type==='owed').reduce((t,x)=>t+(Number(x.amount)||0),0);   // + adjustments, − payouts
+  return fromSales + flows;
+}
+function totalPartnerHeld(){ return allFunds().reduce((t,f)=>t+partnerHeld(f.id),0); }
+function pickFundId(flow){
+  const fs = allFunds(); if(!fs.length) return '';
+  if(flow && flow.fundId && fundById(flow.fundId)) return flow.fundId;
+  const last = lsGet('ipoledger_lastfund',''); return fundById(last) ? last : fs[0].id;
+}
 function totalProfitAll(){
   return realSales().reduce((s,sale)=> s + saleNet(sale), 0);
 }
@@ -1468,6 +1509,7 @@ function renderApply(main){
         <div style="font-size:12px;color:var(--ink-faint);" class="tabular">Available ${fmtMoney(avail)} · Blocked ${fmtMoney(blocked)}</div>
       </div>
       <div class="pill-tabs" style="margin:10px 0 8px;" id="cat-tabs">${CATEGORIES.map(([k,l])=>`<button data-cat="${k}" class="${cat===k?'active':''}">${l}</button>`).join('')}</div>
+      ${allFunds().length ? `<div class="set-sub" style="margin:2px 0 4px;">Funded from</div><div class="pill-tabs" style="margin:0 0 8px;" id="fund-tabs">${allFunds().map(f=>`<button data-fund="${f.id}" class="${pickFundId(flow)===f.id?'active':''}">${esc(f.name)}</button>`).join('')}</div>` : ''}
       ${minLots>1?`<div style="font-size:12px;color:var(--gold);margin-bottom:8px;">This is an SME IPO — minimum ${minLots} lots per application.</div>`:''}
       <div class="card" style="padding:6px 12px;">
         ${State.applicants.map(a=>{
@@ -1490,6 +1532,7 @@ function renderApply(main){
       </div>
       <div id="apply-summary"></div>
     `;
+    applicantSlot.querySelectorAll('[data-fund]').forEach(b=>b.addEventListener('click',()=>{ flow.fundId=b.dataset.fund; renderApplyDetails(); }));
     applicantSlot.querySelectorAll('[data-cat]').forEach(b=>b.addEventListener('click',()=>{ flow.category=b.dataset.cat; flow.selected=new Map(); renderApplyDetails(); }));
     applicantSlot.querySelectorAll('[data-tick]').forEach(el=>el.addEventListener('click',()=>{
       const id = el.dataset.tick;
@@ -1541,7 +1584,7 @@ async function markSelectedApplied(ipo, bank, lotAmt){
     totalAmount += amount;
     const app = {
       id: uid(), ipoId: ipo.id, applicantId, bankId: bank.id,
-      lots, amount, appliedDate: todayStr(), category: flow.category || 'retail',
+      lots, amount, appliedDate: todayStr(), category: flow.category || 'retail', fundId: pickFundId(flow),
       allotmentStatus: 'pending', // pending | not_allotted | allotted
       allottedAmount: 0, refundedAmount: 0, refundDate: null,
     };
@@ -1549,6 +1592,7 @@ async function markSelectedApplied(ipo, bank, lotAmt){
     State.applications.push(app);
     created.push(app);
   }
+  if(pickFundId(flow)) lsSet('ipoledger_lastfund', pickFundId(flow));
   lsSet('ipoledger_lastapply', { bankId: bank.id, people: entries.map(([id,lots])=>({id, lots})) });
   flow.selected = new Map();
   toast(`✅ ${entries.length} marked applied — ${bankLabel(bank)}, ${fmtMoney(totalAmount)}`, { ms:7000, action:{ label:'Undo', fn: async ()=>{
@@ -1659,9 +1703,11 @@ function renderApplications(main){
       ${backBar('All IPOs','app-back')}
       <h1 class="page-title">${esc(ipo?ipo.name:'IPO')}</h1>
       <p class="page-sub">${list.length} application${list.length!==1?'s':''} · ${fmtMoney(sum(list))} · pick a bank</p>
+      ${allFunds().length ? `<div style="margin:-6px 0 10px;"><button class="al-link" id="assign-fund">Set fund for this IPO…</button></div>` : ''}
       <div class="card" style="padding:6px 12px;">${cards}</div>
     `;
     document.getElementById('app-back').addEventListener('click',()=>{ history.back(); });
+    const af2 = document.getElementById('assign-fund'); if(af2) af2.addEventListener('click',()=>openAssignFundModal(list.map(a=>a.id),'this IPO'));
     main.querySelectorAll('[data-bank]').forEach(el=>el.addEventListener('click',()=>{ open(nav.ipoId, el.dataset.bank); }));
   }
 
@@ -1674,9 +1720,11 @@ function renderApplications(main){
       ${backBar(ipo?ipo.name:'Back','app-back')}
       <h1 class="page-title">${esc(bank?bankLabel(bank):'Bank')}</h1>
       <p class="page-sub">${esc(ipo?ipo.name:'')} · ${list.length} applicant${list.length!==1?'s':''} · ${pend.length} pending · ${fmtMoney(sum(list))}</p>
+      ${allFunds().length ? `<div style="margin:-6px 0 10px;"><button class="al-link" id="assign-fund">Set fund for these…</button></div>` : ''}
       <div class="card" style="padding:6px 12px;">${list.map(row).join('')}</div>
     `;
     document.getElementById('app-back').addEventListener('click',()=>{ history.back(); });
+    const af3 = document.getElementById('assign-fund'); if(af3) af3.addEventListener('click',()=>openAssignFundModal(list.map(a=>a.id),'this bank'));
     main.querySelectorAll('[data-open-ipo]').forEach(el=>el.addEventListener('click',()=>openAllotmentModal(el.dataset.openIpo)));
     main.querySelectorAll('[data-unapply]').forEach(el=>el.addEventListener('click',()=>confirmUnapply(el.dataset.unapply)));
   }
@@ -1715,7 +1763,187 @@ function confirmUnapply(appId){
 }
 
 /* ==================== BANKS ==================== */
+function bankTabsHtml(){ const t=State._bankTab||'accounts'; return `<div class="pill-tabs" style="margin:6px 0 10px;"><button data-btab="accounts" class="${t==='accounts'?'active':''}">Accounts</button><button data-btab="funds" class="${t==='funds'?'active':''}">Funds</button></div>`; }
+function bindBankTabs(main){ main.querySelectorAll('[data-btab]').forEach(b=>b.addEventListener('click',()=>{ State._bankTab=b.dataset.btab; renderBanks(main); })); }
+
+function renderFunds(main){
+  State._fundOpen = State._fundOpen || {};
+  const funds = allFunds();
+  const unassigned = State.applications.filter(a=>!fundById(a.fundId));
+  const unAmt = unassigned.reduce((t,a)=>t+(a.amount||0),0);
+  const inBanks = totalMoneyInBanks();
+  const expected = funds.reduce((t,f)=>{ const u=fundUse(f.id); return t+u.free+u.pending; },0) + availableBalance() + totalPartnerHeld();
+  const diff = Math.round((inBanks-expected)*100)/100;
+  const card = (f)=>{
+    const u = fundUse(f.id), pr = fundProfit(f.id), open = !!State._fundOpen[f.id], held = partnerHeld(f.id), pct = fundSharePct(f);
+    let body = '';
+    if(open){
+      const apps = State.applications.filter(a=>a.fundId===f.id), byIpo = {};
+      apps.forEach(a=>{ (byIpo[a.ipoId]=byIpo[a.ipoId]||[]).push(a); });
+      const ids = new Set(apps.map(a=>a.id)), sold = new Set(realSales().filter(x=>ids.has(x.applicationId)).map(x=>x.applicationId));
+      const rows = Object.keys(byIpo).map(iid=>{
+        const list = byIpo[iid], ipo = ipoById(iid), amt = list.reduce((t,a)=>t+(a.amount||0),0);
+        const c = { pending:0, held:0, sold:0, back:0 };
+        list.forEach(a=>{ if((a.allotmentStatus||'pending')==='pending') c.pending++; else if(sold.has(a.id)) c.sold++; else if((a.allottedAmount||0)>0) c.held++; else c.back++; });
+        const status = [c.pending?`${c.pending} waiting`:'', c.held?`${c.held} in shares`:'', c.sold?`${c.sold} sold`:'', c.back?`${c.back} refunded`:''].filter(Boolean).join(' · ');
+        const sp = realSales().filter(x=>ids.has(x.applicationId) && list.some(a=>a.id===x.applicationId));
+        const mine = sp.reduce((t,x)=>t+saleNet(x),0), oth = sp.reduce((t,x)=>t+salePartnerShare(x),0);
+        return `<div class="list-item"><div class="main"><div class="title" style="font-weight:500;font-size:13.5px;">${esc(ipo?ipo.name:'IPO')}</div><div class="meta tabular">${list.length} application${list.length>1?'s':''} · ${fmtMoney(amt)} · ${status}</div>${sp.length?`<div class="meta tabular">Profit: you ${fmtMoney(mine)}${f.partner?` · ${esc(f.partner)} ${fmtMoney(oth)}`:''}</div>`:''}</div></div>`;
+      }).join('');
+      body = `<div class="bank-stmt">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 8px;">
+          <button class="btn sm ghost" data-fund-flow="${f.id}|capital">± Add / take out money</button>
+          ${f.partner ? `<button class="btn sm ghost" data-fund-flow="${f.id}|owed">${esc(f.partner)}’s profit: pay out / adjust</button>` : ''}
+        </div>
+        ${rows || '<div class="set-sub" style="padding:6px 0;">No applications from this fund yet. Choose it under “Funded from” on the Apply screen.</div>'}
+      </div>`;
+    }
+    return `<div class="bank-item"><div class="list-item">
+      <div class="main" data-toggle-fund="${f.id}" style="cursor:pointer;flex:1;">
+        <div class="title">${esc(f.name)}${f.partner?` <span class="al-cat">${esc(f.partner)} · you ${pct}%</span>`:''}</div>
+        <div class="meta tabular">Capital ${fmtMoney(fundCapital(f.id))} · Free ${fmtMoney(u.free)}</div>
+        <div class="meta tabular">In IPOs ${fmtMoney(u.pending)} · In shares ${fmtMoney(u.shares)}</div>
+        <div class="meta tabular">Profit: you ${fmtMoney(pr.mine)}${f.partner?` · ${esc(f.partner)} ${fmtMoney(pr.partner)} · holding ${fmtMoney(held)}`:''}</div>
+      </div>
+      <div class="actions">
+        <button class="iconbtn chev-btn" data-toggle-fund="${f.id}" title="${open?'Hide':'Show'} IPOs" aria-expanded="${open}"><span class="chev ${open?'open':''}">⌄</span></button>
+        <button class="iconbtn" data-edit-fund="${f.id}">${ICONS.edit}</button>
+        <button class="iconbtn" data-del-fund="${f.id}">${ICONS.trash}</button>
+      </div></div>${body}</div>`;
+  };
+  main.innerHTML = `
+    <div class="row"><h1 class="page-title">Funds</h1>
+      <button class="btn primary sm" id="add-fund">${ICONS.plus} Fund</button></div>
+    ${bankTabsHtml()}
+    <p class="page-sub">Whose money is where — separate from which bank it sits in</p>
+    ${funds.length===0 ? `<div class="empty-state">${ICONS.bank}<div class="t">No funds yet</div><div class="s">Create one fund for each pot of money (for example “IPO fund”, or “Uncle’s fund” with a profit share). Then choose it on the Apply screen.</div></div>` : `
+      <div class="card" style="padding:10px 14px;margin-bottom:12px;">
+        <div class="set-label">Reconciliation</div>
+        ${unassigned.length ? `<div class="set-sub" style="margin-top:4px;color:var(--gold);">${unassigned.length} application${unassigned.length>1?'s':''} (${fmtMoney(unAmt)}) not linked to a fund yet — set the fund inside Applications → an IPO. Until then this check can’t balance.</div>`
+          : `<div class="set-sub tabular" style="margin-top:4px;">Funds + profit say ${fmtMoney(expected)} should be in your accounts; your accounts hold ${fmtMoney(inBanks)}.</div>
+             <div class="tabular" style="font-weight:700;margin-top:2px;color:${Math.abs(diff)<1?'var(--green)':'var(--gold)'};">${Math.abs(diff)<1?'✓ Everything matches':`Difference ${diff>0?'+':'−'}${fmtMoney(Math.abs(diff))} — interest, charges or money not recorded yet`}</div>`}
+      </div>
+      <div class="card" style="padding:6px 12px;">${funds.map(card).join('')}</div>`}
+  `;
+  bindBankTabs(main);
+  document.getElementById('add-fund').addEventListener('click',()=>openFundModal(null));
+  main.querySelectorAll('[data-toggle-fund]').forEach(el=>el.addEventListener('click',()=>{ const id=el.dataset.toggleFund; State._fundOpen[id]=!State._fundOpen[id]; renderFunds(main); }));
+  main.querySelectorAll('[data-edit-fund]').forEach(el=>el.addEventListener('click',()=>openFundModal(el.dataset.editFund)));
+  main.querySelectorAll('[data-del-fund]').forEach(el=>el.addEventListener('click',()=>confirmDeleteFund(el.dataset.delFund)));
+  main.querySelectorAll('[data-fund-flow]').forEach(el=>el.addEventListener('click',()=>{ const [id,type]=el.dataset.fundFlow.split('|'); openFundFlowModal(id,type); }));
+}
+function openFundModal(editId){
+  const f = editId ? fundById(editId) : null;
+  openModal(`
+    <div class="modal">
+      <h3>${f?'Edit':'New'} fund</h3>
+      <div class="grid" style="gap:10px;">
+        <label class="field">Name<input type="text" id="f-name" value="${f?esc(f.name):''}" placeholder="e.g. IPO fund, Uncle’s fund"></label>
+        <label class="field">Partner (optional)<input type="text" id="f-partner" value="${f?esc(f.partner||''):''}" placeholder="e.g. Uncle — leave empty if it is only your money"></label>
+        <label class="field">Your share of the profit (%)<input type="number" id="f-share" inputmode="decimal" value="${f?fundSharePct(f):100}"></label>
+        <label class="field">Money in this fund now (₹)<input type="number" id="f-capital" inputmode="decimal" value="${f?(f.capital||0):''}" placeholder="e.g. 200000"></label>
+      </div>
+      <div class="set-sub" style="margin-top:8px;">The profit from IPOs funded here is split by that percentage after your commission: your part counts as your profit, the partner’s part is shown as money you are holding for them.</div>
+      <div class="modal-actions"><button class="btn ghost" data-close="1">Cancel</button><button class="btn primary" id="f-save">Save</button></div>
+    </div>`);
+  document.getElementById('f-save').addEventListener('click', async ()=>{
+    const name = document.getElementById('f-name').value.trim();
+    if(!name){ toast('Enter a name'); return; }
+    const share = Math.max(0, Math.min(100, Number(document.getElementById('f-share').value)));
+    const obj = f || { id: uid(), kind:'fund' };
+    Object.assign(obj, { name, partner: document.getElementById('f-partner').value.trim(), mySharePct: isNaN(share)?100:share, capital: Number(document.getElementById('f-capital').value)||0 });
+    await idbPut('sales', obj); if(!f) State.sales.push(obj);
+    closeModal(); toast(f?'Fund updated':'Fund added'); render();
+  });
+}
+function confirmDeleteFund(id){
+  const f = fundById(id); if(!f) return;
+  const used = State.applications.filter(a=>a.fundId===id).length;
+  if(!window.confirm(`Delete “${f.name}”?${used?` ${used} application(s) will become unassigned.`:''}`)) return;
+  (async()=>{
+    for(const a of State.applications.filter(x=>x.fundId===id)){ a.fundId=''; await idbPut('applications', a); }
+    for(const x of fundFlows(id)){ await idbDelete('sales', x.id); }
+    await idbDelete('sales', id);
+    State.sales = State.sales.filter(x=>x.id!==id && !(x.kind==='fundflow' && x.fundId===id));
+    toast('Fund deleted'); render();
+  })();
+}
+function openFundFlowModal(fundId, type){
+  const f = fundById(fundId); if(!f) return;
+  const isCap = type==='capital';
+  openModal(`
+    <div class="modal">
+      <h3>${esc(f.name)}</h3>
+      <div class="set-sub" style="margin-bottom:10px;">${isCap ? 'Record money you add to this fund or take out of it.' : `Record profit you hand over to ${esc(f.partner||'your partner')}, or correct what you are holding for them (for example profit earned before using this app).`}</div>
+      <div class="grid" style="gap:10px;">
+        <label class="field">What happened
+          <select id="ff-dir">${isCap ? '<option value="1">Money added to the fund</option><option value="-1">Money taken out of the fund</option>' : `<option value="-1">Paid out to ${esc(f.partner||'partner')}</option><option value="1">Add to what I’m holding for ${esc(f.partner||'partner')}</option>`}</select>
+        </label>
+        <label class="field">Amount (₹)<input type="number" id="ff-amount" inputmode="decimal" placeholder="0"></label>
+        <div class="grid cols-2">
+          <label class="field">Date<input type="date" id="ff-date" value="${todayStr()}"></label>
+          <label class="field">Note (optional)<input type="text" id="ff-note" maxlength="60"></label>
+        </div>
+      </div>
+      <div class="modal-actions"><button class="btn ghost" data-close="1">Cancel</button><button class="btn primary" id="ff-save">Record</button></div>
+    </div>`);
+  document.getElementById('ff-save').addEventListener('click', async ()=>{
+    const amt = Number(document.getElementById('ff-amount').value);
+    if(!(amt>0)){ toast('Enter an amount'); return; }
+    const obj = { id: uid(), kind:'fundflow', fundId, type: isCap?'capital':'owed', amount: amt*Number(document.getElementById('ff-dir').value), date: document.getElementById('ff-date').value||todayStr(), note: document.getElementById('ff-note').value.trim() };
+    await idbPut('sales', obj); State.sales.push(obj);
+    closeModal(); toast('Recorded'); render();
+  });
+}
+function openAssignFundModal(appIds, label){
+  const funds = allFunds();
+  if(!funds.length){ toast('Create a fund first: Banks → Funds'); return; }
+  const apps = State.applications.filter(a=>appIds.includes(a.id));
+  const sales = realSales().filter(x=>appIds.includes(x.applicationId));
+  const cur = (apps[0]||{}).fundId || '';
+  openModal(`
+    <div class="modal">
+      <h3>Set fund</h3>
+      <div class="set-sub" style="margin-bottom:8px;">${apps.length} application${apps.length!==1?'s':''} · ${fmtMoney(apps.reduce((t,a)=>t+(a.amount||0),0))} in ${esc(label)} will be marked as funded from:</div>
+      ${funds.map(f=>`<label style="display:flex;gap:10px;align-items:center;padding:8px 0;font-size:14px;"><input type="radio" name="fund-pick" value="${f.id}" ${cur===f.id?'checked':''} style="width:18px;height:18px;"> <span>${esc(f.name)}${f.partner?` <span class="set-sub">— you ${fundSharePct(f)}% · ${esc(f.partner)} ${100-fundSharePct(f)}%</span>`:''}</span></label>`).join('')}
+      <label style="display:flex;gap:10px;align-items:center;padding:8px 0;font-size:14px;"><input type="radio" name="fund-pick" value="" ${cur===''?'checked':''} style="width:18px;height:18px;"> <span>No fund</span></label>
+      ${sales.length ? `<div class="set-sub" style="margin-top:6px;">Also updates the profit split on ${sales.length} sale${sales.length>1?'s':''} already recorded for these.</div>` : ''}
+      <div class="modal-actions"><button class="btn ghost" data-close="1">Cancel</button><button class="btn primary" id="af-save">Save</button></div>
+    </div>`);
+  document.getElementById('af-save').addEventListener('click', async ()=>{
+    const pick = (document.querySelector('input[name="fund-pick"]:checked')||{}).value || '';
+    const f = fundById(pick);
+    for(const a of apps){ a.fundId = pick; await idbPut('applications', a); }
+    for(const x of sales){ x.fundId = pick; x.mySharePct = f ? fundSharePct(f) : 100; await idbPut('sales', x); }
+    closeModal(); toast(f ? `Linked to ${f.name}` : 'Fund cleared'); render();
+  });
+}
+function openResetBalancesModal(){
+  if(!State.banks.length){ toast('Add your accounts first'); return; }
+  openModal(`
+    <div class="modal">
+      <h3>Reset account balances</h3>
+      <div class="set-sub" style="margin-bottom:10px;">Type what each account really holds right now, <b>not counting money blocked for IPOs</b> that are still waiting. The app starts counting from today and keeps older history out of the way. Leave a box empty to keep that account as it is.</div>
+      <div class="grid" style="gap:8px;">
+        ${State.banks.map(b=>`<label class="field">${esc(bankLabel(b))} <span class="set-sub tabular">(app says ${fmtMoney(bankAvailable(b.id))})</span><input type="number" data-reset-bank="${b.id}" inputmode="decimal" placeholder="actual balance"></label>`).join('')}
+      </div>
+      <div class="modal-actions"><button class="btn ghost" data-close="1">Cancel</button><button class="btn primary" id="rb-save">Reset</button></div>
+    </div>`);
+  document.getElementById('rb-save').addEventListener('click', async ()=>{
+    const today = todayStr(); let n = 0;
+    for(const inp of document.querySelectorAll('[data-reset-bank]')){
+      if(inp.value==='') continue;
+      const b = bankById(inp.dataset.resetBank), actual = Number(inp.value)||0;
+      b.baselineDate = today; b.openingBalance = 0;
+      const todayOnly = bankLedger(b.id).current;              // anything already recorded today stays on top
+      b.openingBalance = Math.round((actual - todayOnly)*100)/100;
+      await idbPut('banks', b); n++;
+    }
+    closeModal(); toast(n ? `${n} account${n>1?'s':''} reset` : 'Nothing changed'); render();
+  });
+}
 function renderBanks(main){
+  if((State._bankTab||'accounts')==='funds'){ return renderFunds(main); }
   State._bankOpen = State._bankOpen || {};
   const row = (b)=>{
     const avail = bankAvailable(b.id), blocked = bankBlocked(b.id), open = !!State._bankOpen[b.id];
@@ -1741,6 +1969,7 @@ function renderBanks(main){
         <button class="btn primary sm" id="add-bank">${ICONS.plus} Add</button>
       </div>
     </div>
+    ${bankTabsHtml()}
     <p class="page-sub">Tap the arrow on an account to open or close its statement</p>
     ${State.banks.length===0 ? `<div class="empty-state">${ICONS.bank}<div class="t">No banks yet</div><div class="s">Add your first bank to start tracking money.</div></div>` : `
       <div class="card" style="padding:6px 12px;">
@@ -1752,6 +1981,7 @@ function renderBanks(main){
       </div>
     `}
   `;
+  bindBankTabs(main);
   document.getElementById('add-bank').addEventListener('click',()=>openBankModal(null));
   const mv = document.getElementById('move-money'); if(mv) mv.addEventListener('click',()=>openTransferModal());
   main.querySelectorAll('[data-edit-bank]').forEach(el=>el.addEventListener('click',()=>openBankModal(bankById(el.dataset.editBank))));
@@ -2847,12 +3077,12 @@ function renderProfit(main){
   const totalProfit = earnedProfit(), balance = availableBalance(), withdrawn = withdrawnTotal(), earlier = earlierProfitTotal();
   const net = saleNet;
   const totalCommission = realSales().reduce((t,x)=>t+(x.commission||0),0);
-  const ledger = State.sales.filter(x=>x.kind).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+  const ledger = State.sales.filter(x=>x.kind==='earlier' || x.kind==='withdrawal').sort((a,b)=>(b.date||'').localeCompare(a.date||''));
   const sales = realSales().slice().sort((a,b)=>(b.saleDate||'').localeCompare(a.saleDate||''));
 
   // by IPO
   const byIpo = {};
-  sales.forEach(x=>{ const g=(byIpo[x.ipoId]=byIpo[x.ipoId]||{ipoId:x.ipoId,inv:0,sold:0,chg:0,com:0,n:0,rows:[],last:''}); g.inv+=x.investment||0; g.sold+=x.saleAmount||0; g.chg+=x.charges||0; g.com+=x.commission||0; g.n++; g.rows.push(x); if((x.saleDate||'')>g.last) g.last=x.saleDate||''; });
+  sales.forEach(x=>{ const g=(byIpo[x.ipoId]=byIpo[x.ipoId]||{ipoId:x.ipoId,inv:0,sold:0,chg:0,com:0,mine:0,partner:0,n:0,rows:[],last:''}); g.inv+=x.investment||0; g.sold+=x.saleAmount||0; g.chg+=x.charges||0; g.com+=x.commission||0; g.mine+=saleNet(x); g.partner+=salePartnerShare(x); g.n++; g.rows.push(x); if((x.saleDate||'')>g.last) g.last=x.saleDate||''; });
   const ipoGroups = Object.values(byIpo).sort((a,b)=>b.last.localeCompare(a.last));
 
   // by month (running total)
@@ -2881,6 +3111,7 @@ function renderProfit(main){
       <span class="chip tabular">This month <b style="color:${thisMonth>=0?'var(--green)':'var(--rust)'};">${thisMonth>=0?'+':'−'}${fmtMoney(Math.abs(thisMonth))}</b></span>
       ${earlier ? `<span class="chip tabular">Earlier profit <b>${fmtMoney(earlier)}</b></span>` : ''}
       ${withdrawn ? `<span class="chip tabular">Withdrawn <b style="color:var(--rust);">${fmtMoney(withdrawn)}</b></span>` : ''}
+      ${allFunds().filter(f=>f.partner).map(f=>({n:f.partner,v:partnerHeld(f.id)})).filter(x=>Math.abs(x.v)>=0.5).map(x=>`<span class="chip tabular">Held for ${esc(x.n)} <b>${fmtMoney(x.v)}</b></span>`).join('')}
     </div>
 
     ${totalCommission>0 ? `<div class="chips-row"><span class="chips-label">Commission paid</span><span class="chip tabular">${fmtMoney(totalCommission)}</span><span class="set-sub">already deducted from the profit above</span></div>` : ''}
@@ -2907,11 +3138,11 @@ function renderProfit(main){
     ${ipoGroups.length===0 ? `<div class="empty-state">${ICONS.profit}<div class="t">No sales recorded yet</div></div>` : `
       <div class="card" style="padding:4px 12px;">
         ${ipoGroups.map(g=>{
-          const ipo = ipoById(g.ipoId); const p = g.sold-g.inv-g.chg-g.com;
+          const ipo = ipoById(g.ipoId); const p = g.mine;
           return `<details class="pf-ipo">
             <summary>
               <div class="al-main"><div class="al-name">${esc(ipo?ipo.name:'IPO')}</div>
-              <div class="al-meta tabular">${g.n} sale${g.n>1?'s':''} · ${fmtMoney(g.inv)} → ${fmtMoney(g.sold)}${g.chg?` · charges ${fmtMoney(g.chg)}`:''}${g.com?` · commission ${fmtMoney(g.com)}`:''}</div></div>
+              <div class="al-meta tabular">${g.n} sale${g.n>1?'s':''} · ${fmtMoney(g.inv)} → ${fmtMoney(g.sold)}${g.chg?` · charges ${fmtMoney(g.chg)}`:''}${g.com?` · commission ${fmtMoney(g.com)}`:''}${Math.abs(g.partner)>=0.5?` · partner share ${fmtMoney(g.partner)}`:''}</div></div>
               <div class="money ${p>=0?'plus':'minus'} tabular">${p>=0?'+':''}${fmtMoney(p)}</div>
             </summary>
             ${g.rows.map(x=>{ const ap=applicantById(x.applicantId); const q=net(x); return `<div class="pf-row" data-edit-sale="${x.id}" style="cursor:pointer;"><span>${esc(ap?ap.name:'—')} <span style="color:var(--ink-faint);font-size:11.5px;">· ${fmtDate(x.saleDate)}${x.commission?` · commission ${fmtMoney(x.commission)}`:''}</span></span><span class="tabular" style="color:${q>=0?'var(--green)':'var(--rust)'};">${q>=0?'+':'−'}${fmtMoney(Math.abs(q))} <span style="color:var(--ink-faint);">›</span></span></div>`; }).join('')}
@@ -3005,7 +3236,8 @@ function openSaleModal(preselectId, editId){
         </div>
         <div id="s-before" style="font-size:13.5px;font-weight:700;min-height:18px;"></div>
         <label class="field"><span id="s-com-label">Commission to give (₹, optional)</span><input type="number" id="s-commission" inputmode="decimal" placeholder="0" value="${editing && editing.commission ? editing.commission : ''}"></label>
-        <div id="s-net" style="font-size:15px;font-weight:800;min-height:20px;"></div>
+        <label class="field"><span id="s-share-label">Your share of the profit (%)</span><input type="number" id="s-share" inputmode="decimal" value="${editing && editing.mySharePct!=null ? editing.mySharePct : 100}"></label>
+        <div id="s-net" style="font-size:14.5px;font-weight:800;min-height:20px;line-height:1.5;"></div>
       </div>
       <div class="modal-actions">
         ${editing ? `<button class="btn danger" id="del-sale" style="margin-right:auto;">Delete</button>` : ''}
@@ -3021,6 +3253,9 @@ function openSaleModal(preselectId, editId){
     const who = app ? (applicantById(app.applicantId)||{}).name : '';
     document.getElementById('s-com-label').textContent = who ? `Commission to give ${who} (₹, optional)` : 'Commission to give (₹, optional)';
     const rec = document.getElementById('s-received').value, inv = Number(document.getElementById('s-invest').value)||0, com = Number(document.getElementById('s-commission').value)||0;
+    const share = Math.max(0, Math.min(100, Number(document.getElementById('s-share').value)));
+    const fnd = fundById(app && app.fundId);
+    document.getElementById('s-share-label').textContent = fnd ? `Your share of the profit (%) — ${fnd.name}${fnd.partner?`, ${fnd.partner} gets the rest`:''}` : 'Your share of the profit (%)';
     const before = document.getElementById('s-before'), net = document.getElementById('s-net');
     if(rec===''){ before.textContent=''; net.textContent=''; return; }
     const p = (Number(rec)||0) - inv;
@@ -3028,12 +3263,13 @@ function openSaleModal(preselectId, editId){
     before.textContent = `Profit before commission: ${sign(p)}` + (inv>0 ? ` (${p>=0?'+':'−'}${Math.abs(p/inv*100).toFixed(1)}%)` : '');
     const n = p - com;
     net.style.color = n>=0 ? 'var(--green)' : 'var(--rust)';
-    net.textContent = com>0 ? `Your net profit: ${sign(n)}` : '';
+    const mine = n*share/100, other = n - mine, pname = (fnd && fnd.partner) || 'Partner';
+    net.textContent = (com>0 || share<100) ? (share<100 ? `After commission ${sign(n)} → You ${sign(mine)} · ${pname} ${sign(other)}` : `Your net profit: ${sign(n)}`) : '';
   };
-  const fill = (appId)=>{ const app = State.applications.find(a=>a.id===appId); if(app && !editing) document.getElementById('s-invest').value = app.allottedAmount||''; refresh(); };
+  const fill = (appId)=>{ const app = State.applications.find(a=>a.id===appId); if(app && !editing){ document.getElementById('s-invest').value = app.allottedAmount||''; const f = fundById(app.fundId); document.getElementById('s-share').value = f ? fundSharePct(f) : 100; } refresh(); };
   if(startApp) fill(startApp); else refresh();
   document.getElementById('s-app').addEventListener('change',(e)=>fill(e.target.value));
-  ['s-received','s-invest','s-commission'].forEach(id=>document.getElementById(id).addEventListener('input', refresh));
+  ['s-received','s-invest','s-commission','s-share'].forEach(id=>document.getElementById(id).addEventListener('input', refresh));
   refresh();
   document.getElementById('save-sale').addEventListener('click', async ()=>{
     const appId = editing ? editing.applicationId : document.getElementById('s-app').value;
@@ -3047,7 +3283,10 @@ function openSaleModal(preselectId, editId){
       commission: Number(document.getElementById('s-commission').value)||0,
       saleDate: document.getElementById('s-date').value || todayStr(),
       bankId: document.getElementById('s-bank').value || 'none',     // where the money landed
+      mySharePct: Math.max(0, Math.min(100, Number(document.getElementById('s-share').value))) || 0,
+      fundId: (State.applications.find(a=>a.id===appId)||{}).fundId || '',
     };
+    if(document.getElementById('s-share').value==='') fields.mySharePct = 100;
     if(editing){ Object.assign(editing, fields); await idbPut('sales', editing); toast('Sale updated'); }
     else {
       const obj = { id: uid(), ipoId: app.ipoId, applicantId: app.applicantId, applicationId: app.id, charges: 0, ...fields };
@@ -3538,6 +3777,10 @@ function renderSettings(main){
         <button class="btn sm ghost" id="s-fix-sme">Run</button>
       </div>
       <div class="set-row">
+        <div><div class="set-label">Reset account balances</div><div class="set-sub">Type each account’s real balance today and start counting from there</div></div>
+        <button class="btn sm ghost" id="s-reset-bal">Run</button>
+      </div>
+      <div class="set-row">
         <div><div class="set-label">Credit earlier sales</div><div class="set-sub">Add sale proceeds recorded before you picked a primary account</div></div>
         <button class="btn sm ghost" id="s-backfill">Run</button>
       </div>
@@ -3578,6 +3821,7 @@ function renderSettings(main){
   document.getElementById('s-reload').addEventListener('click', reloadLatestVersion);
   document.getElementById('s-earlier').addEventListener('click', ()=>openLedgerModal('earlier'));
   document.getElementById('s-backfill').addEventListener('click', ()=>openBackfillModal());
+  document.getElementById('s-reset-bal').addEventListener('click', ()=>openResetBalancesModal());
   document.getElementById('s-prune-ipos').addEventListener('click', async ()=>{ const n = await pruneOldIpos(); toast(n ? `Cleared ${n} old IPO${n>1?'s':''}` : 'Nothing old to clear'); });
   const settingsSignIn = document.getElementById('settings-signin-btn');
   if(settingsSignIn) settingsSignIn.addEventListener('click', signInWithGoogle);
