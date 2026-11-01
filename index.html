@@ -410,7 +410,7 @@ button.chip{ background:none; cursor:pointer; font-family:inherit; color:var(--i
    ========================================================= */
 
 /* ---------- ICONS (tiny inline svg set) ---------- */
-const APP_VERSION = '2.5';
+const APP_VERSION = '2.7';
 const ICONS = {
   back: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>`,
   list: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 6h13M8 12h13M8 18h13"/><path d="M3 6h.01M3 12h.01M3 18h.01"/></svg>`,
@@ -831,8 +831,8 @@ function bankLedger(bankId){
 
   // transfers out/in
   State.transfers.forEach(t=>{
-    if(t.fromBankId===bankId) entries.push({date:t.date, label: t.toBankId ? `Transfer to ${tb(t.toBankId)}` : (t.note ? `Money taken out — ${t.note}` : 'Money taken out'), amount:-t.amount});
-    if(t.toBankId===bankId) entries.push({date:t.date, label: t.fromBankId ? `Transfer from ${tb(t.fromBankId)}` : (t.note ? `Money added — ${t.note}` : 'Money added'), amount:t.amount});
+    if(t.fromBankId===bankId) entries.push({date:t.date, label: t.toBankId ? `Transfer to ${tb(t.toBankId)}${t.fundId&&fundById(t.fundId)?' · '+fundById(t.fundId).name:''}` : (t.note ? `Money taken out — ${t.note}` : 'Money taken out'), amount:-t.amount});
+    if(t.toBankId===bankId) entries.push({date:t.date, label: t.fromBankId ? `Transfer from ${tb(t.fromBankId)}${t.fundId&&fundById(t.fundId)?' · '+fundById(t.fundId).name:''}` : (t.note ? `Money added — ${t.note}` : 'Money added'), amount:t.amount});
   });
 
   // sale proceeds credited to this account
@@ -932,15 +932,22 @@ function earlierProfitTotal(){ return ledgerEntries('earlier').reduce((t,x)=>t+(
 function withdrawnTotal(){ return ledgerEntries('withdrawal').reduce((t,x)=>t+(Number(x.amount)||0),0); }
 function earnedProfit(){ return totalProfitAll() + earlierProfitTotal(); }          // all-time profit incl. profit from before the app
 function availableBalance(){ return earnedProfit() - withdrawnTotal(); }            // what's left after withdrawals / expenses
-function allFunds(){ return State.sales.filter(x=>x.kind==='fund'); }
-function fundById(id){ return id ? (State.sales.find(x=>x.kind==='fund' && x.id===id) || null) : null; }
+const PROFIT_FUND = { id:'profit', kind:'fund', name:'Profit', partner:'', mySharePct:100, capital:0, profit:true, virtual:true };   // linked to the Profit tab, never stored
+function allFunds(){
+  const real = State.sales.filter(x=>x.kind==='fund');
+  const usesProfit = State.applications.some(a=>a.fundId==='profit');
+  return (real.length || usesProfit) ? [...real, PROFIT_FUND] : real;
+}
+function fundById(id){ if(!id) return null; if(id==='profit') return PROFIT_FUND; return State.sales.find(x=>x.kind==='fund' && x.id===id) || null; }
 function fundFlows(fundId){ return State.sales.filter(x=>x.kind==='fundflow' && x.fundId===fundId); }
 function fundSharePct(f){ return (f && f.mySharePct!=null && f.mySharePct!=='') ? Number(f.mySharePct) : 100; }
 function saleTotalProfit(x){ return (x.saleAmount||0) - (x.investment||0) - (x.charges||0) - (x.commission||0); }   // after commission
 function saleNet(x){ const pct = (x.mySharePct==null || x.mySharePct==='') ? 100 : Number(x.mySharePct); return saleTotalProfit(x)*pct/100; }   // YOUR share
 function salePartnerShare(x){ return saleTotalProfit(x) - saleNet(x); }
 function saleFundId(x){ return x.fundId || ((State.applications.find(a=>a.id===x.applicationId)||{}).fundId) || ''; }
-function fundCapital(fundId){ const f=fundById(fundId); return (Number(f&&f.capital)||0) + fundFlows(fundId).filter(x=>x.type==='capital').reduce((t,x)=>t+(Number(x.amount)||0),0); }
+function fundCapital(fundId){
+  if(fundId==='profit') return availableBalance() + totalPartnerHeld();      // your profit after spending, plus profit you hold for partners
+  const f=fundById(fundId); return (Number(f&&f.capital)||0) + fundFlows(fundId).filter(x=>x.type==='capital').reduce((t,x)=>t+(Number(x.amount)||0),0); }
 function fundUse(fundId){
   const apps = State.applications.filter(a=>a.fundId===fundId), ids = new Set(apps.map(a=>a.id));
   const sales = realSales().filter(x=>ids.has(x.applicationId)), sold = new Set(sales.map(x=>x.applicationId));
@@ -956,6 +963,33 @@ function fundUse(fundId){
 function fundProfit(fundId){
   const sales = realSales().filter(x=>saleFundId(x)===fundId);
   return { mine: sales.reduce((t,x)=>t+saleNet(x),0), partner: sales.reduce((t,x)=>t+salePartnerShare(x),0) };
+}
+function fundHome(f){                              // the account a fund's money sits in by default
+  const b = f && f.homeBankId && bankById(f.homeBankId) ? bankById(f.homeBankId) : (primaryBank() || State.banks[0] || null);
+  return b ? b.id : null;
+}
+function fundLocations(fundId){
+  // How much of this fund's FREE money is in each account. Starts at the fund's home account, then follows
+  // the moves you tag with this fund, the applications you fund from it, and where sale money landed.
+  const f = fundById(fundId), loc = {};
+  State.banks.forEach(b=>{ loc[b.id]=0; });
+  const home = fundHome(f); if(!home || !f) return loc;
+  const add = (b,v)=>{ if(b in loc) loc[b] += v; };
+  add(home, fundCapital(fundId));
+  State.transfers.filter(t=>t.fundId===fundId && t.fromBankId && t.toBankId).forEach(t=>{ add(t.fromBankId,-(t.amount||0)); add(t.toBankId,t.amount||0); });
+  State.applications.filter(a=>a.fundId===fundId).forEach(a=>{ add(a.bankId, -(a.amount||0)); add(a.bankId, a.refundedAmount||0); });
+  realSales().forEach(x=>{
+    if(!x.bankId || x.bankId==='none') return;
+    if(saleFundId(x)===fundId) add(x.bankId, x.investment||0);                 // capital comes back where the cash landed
+    if(fundId==='profit'){ const gain = (x.saleAmount||0)-(x.investment||0); add(home,-gain); add(x.bankId,gain); }   // profit lands where the cash landed
+  });
+  return loc;
+}
+function bankFundBreakdown(bankId){
+  const parts = allFunds().map(f=>({ f, v: fundLocations(f.id)[bankId]||0 })).filter(x=>Math.abs(x.v)>=0.5);
+  const tracked = parts.reduce((t,x)=>t+x.v,0);
+  const untracked = Math.round((bankAvailable(bankId)-tracked)*100)/100;
+  return { parts, untracked };
 }
 function partnerHeld(fundId){                                           // partner's profit you are holding for them
   const fromSales = realSales().filter(x=>saleFundId(x)===fundId).reduce((t,x)=>t+salePartnerShare(x),0);
@@ -1509,7 +1543,9 @@ function renderApply(main){
         <div style="font-size:12px;color:var(--ink-faint);" class="tabular">Available ${fmtMoney(avail)} · Blocked ${fmtMoney(blocked)}</div>
       </div>
       <div class="pill-tabs" style="margin:10px 0 8px;" id="cat-tabs">${CATEGORIES.map(([k,l])=>`<button data-cat="${k}" class="${cat===k?'active':''}">${l}</button>`).join('')}</div>
-      ${allFunds().length ? `<div class="set-sub" style="margin:2px 0 4px;">Funded from</div><div class="pill-tabs" style="margin:0 0 8px;" id="fund-tabs">${allFunds().map(f=>`<button data-fund="${f.id}" class="${pickFundId(flow)===f.id?'active':''}">${esc(f.name)}</button>`).join('')}</div>` : ''}
+      ${allFunds().length ? `<div class="set-sub" style="margin:2px 0 4px;">Funded from</div><div class="pill-tabs" style="margin:0 0 8px;" id="fund-tabs">${allFunds().map(f=>`<button data-fund="${f.id}" class="${pickFundId(flow)===f.id?'active':''}">${esc(f.name)}</button>`).join('')}</div>
+        ${(()=>{ const fid = pickFundId(flow), bk = flow.bankId && bankById(flow.bankId); if(!fid || !bk) return ''; const have = Math.round((fundLocations(fid)[bk.id]||0)*100)/100; const fn = (fundById(fid)||{}).name;
+          return `<div class="set-sub tabular" style="margin:0 0 8px;color:${have>0?'var(--ink-faint)':'var(--gold)'};">${esc(fn)}’s money in ${esc(bankLabel(bk))}: ${fmtMoney(have)}${have<=0?' — move some there first (Banks → Move money)':''}</div>`; })()}` : ''}
       ${minLots>1?`<div style="font-size:12px;color:var(--gold);margin-bottom:8px;">This is an SME IPO — minimum ${minLots} lots per application.</div>`:''}
       <div class="card" style="padding:6px 12px;">
         ${State.applicants.map(a=>{
@@ -1772,7 +1808,7 @@ function renderFunds(main){
   const unassigned = State.applications.filter(a=>!fundById(a.fundId));
   const unAmt = unassigned.reduce((t,a)=>t+(a.amount||0),0);
   const inBanks = totalMoneyInBanks();
-  const expected = funds.reduce((t,f)=>{ const u=fundUse(f.id); return t+u.free+u.pending; },0) + availableBalance() + totalPartnerHeld();
+  const expected = funds.reduce((t,f)=>{ const u=fundUse(f.id); return t+u.free+u.pending; },0);     // the Profit fund already contains your profit pool
   const diff = Math.round((inBanks-expected)*100)/100;
   const card = (f)=>{
     const u = fundUse(f.id), pr = fundProfit(f.id), open = !!State._fundOpen[f.id], held = partnerHeld(f.id), pct = fundSharePct(f);
@@ -1792,7 +1828,8 @@ function renderFunds(main){
       }).join('');
       body = `<div class="bank-stmt">
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 8px;">
-          <button class="btn sm ghost" data-fund-flow="${f.id}|capital">± Add / take out money</button>
+          ${f.virtual ? '' : `<button class="btn sm ghost" data-fund-flow="${f.id}|capital">± Add / take out money</button>`}
+          ${(!f.virtual && /^profit$/i.test((f.name||'').trim())) ? `<button class="btn sm primary" data-use-profit="${f.id}">Use the linked Profit fund instead</button>` : ''}
           ${f.partner ? `<button class="btn sm ghost" data-fund-flow="${f.id}|owed">${esc(f.partner)}’s profit: pay out / adjust</button>` : ''}
         </div>
         ${rows || '<div class="set-sub" style="padding:6px 0;">No applications from this fund yet. Choose it under “Funded from” on the Apply screen.</div>'}
@@ -1800,15 +1837,16 @@ function renderFunds(main){
     }
     return `<div class="bank-item"><div class="list-item">
       <div class="main" data-toggle-fund="${f.id}" style="cursor:pointer;flex:1;">
-        <div class="title">${esc(f.name)}${f.partner?` <span class="al-cat">${esc(f.partner)} · you ${pct}%</span>`:''}</div>
-        <div class="meta tabular">Capital ${fmtMoney(fundCapital(f.id))} · Free ${fmtMoney(u.free)}</div>
-        <div class="meta tabular">In IPOs ${fmtMoney(u.pending)} · In shares ${fmtMoney(u.shares)}</div>
+        <div class="title">${esc(f.name)}${f.partner?` <span class="al-cat">${esc(f.partner)} · you ${pct}%</span>`:''}${f.virtual?' <span class="al-cat">Profit tab</span>':''}</div>
+        <div class="meta tabular">${f.virtual?'Available profit':'Capital'} ${fmtMoney(fundCapital(f.id))} · Free ${fmtMoney(u.free)}</div>
+        <div class="meta tabular">Blocked in IPOs ${fmtMoney(u.pending)} · In shares ${fmtMoney(u.shares)}</div>
+        ${(()=>{ const loc = fundLocations(f.id); const parts = State.banks.map(b=>({b,v:loc[b.id]})).filter(x=>Math.abs(x.v)>=0.5); return parts.length ? `<div class="meta tabular">Where: ${parts.map(x=>`${esc(bankLabel(x.b))} ${fmtMoney(x.v)}`).join(' · ')}</div>` : ''; })()}
+        ${f.virtual ? `<div class="meta">Linked to the Profit tab — spend or withdraw there; applying from here never changes your profit</div>` : ''}
         <div class="meta tabular">Profit: you ${fmtMoney(pr.mine)}${f.partner?` · ${esc(f.partner)} ${fmtMoney(pr.partner)} · holding ${fmtMoney(held)}`:''}</div>
       </div>
       <div class="actions">
         <button class="iconbtn chev-btn" data-toggle-fund="${f.id}" title="${open?'Hide':'Show'} IPOs" aria-expanded="${open}"><span class="chev ${open?'open':''}">⌄</span></button>
-        <button class="iconbtn" data-edit-fund="${f.id}">${ICONS.edit}</button>
-        <button class="iconbtn" data-del-fund="${f.id}">${ICONS.trash}</button>
+        ${f.virtual ? '' : `<button class="iconbtn" data-edit-fund="${f.id}">${ICONS.edit}</button><button class="iconbtn" data-del-fund="${f.id}">${ICONS.trash}</button>`}
       </div></div>${body}</div>`;
   };
   main.innerHTML = `
@@ -1819,7 +1857,7 @@ function renderFunds(main){
     ${funds.length===0 ? `<div class="empty-state">${ICONS.bank}<div class="t">No funds yet</div><div class="s">Create one fund for each pot of money (for example “IPO fund”, or “Uncle’s fund” with a profit share). Then choose it on the Apply screen.</div></div>` : `
       <div class="card" style="padding:10px 14px;margin-bottom:12px;">
         <div class="set-label">Reconciliation</div>
-        ${unassigned.length ? `<div class="set-sub" style="margin-top:4px;color:var(--gold);">${unassigned.length} application${unassigned.length>1?'s':''} (${fmtMoney(unAmt)}) not linked to a fund yet — set the fund inside Applications → an IPO. Until then this check can’t balance.</div>`
+        ${unassigned.length ? `<div class="set-sub" style="margin-top:4px;color:var(--gold);">${unassigned.length} application${unassigned.length>1?'s':''} (${fmtMoney(unAmt)}) not linked to a fund yet. Until they are, this check can’t balance.</div><button class="btn sm primary" id="link-by-ipo" style="margin-top:8px;">Link them by IPO…</button>`
           : `<div class="set-sub tabular" style="margin-top:4px;">Funds + profit say ${fmtMoney(expected)} should be in your accounts; your accounts hold ${fmtMoney(inBanks)}.</div>
              <div class="tabular" style="font-weight:700;margin-top:2px;color:${Math.abs(diff)<1?'var(--green)':'var(--gold)'};">${Math.abs(diff)<1?'✓ Everything matches':`Difference ${diff>0?'+':'−'}${fmtMoney(Math.abs(diff))} — interest, charges or money not recorded yet`}</div>`}
       </div>
@@ -1827,6 +1865,8 @@ function renderFunds(main){
   `;
   bindBankTabs(main);
   document.getElementById('add-fund').addEventListener('click',()=>openFundModal(null));
+  const lbi = document.getElementById('link-by-ipo'); if(lbi) lbi.addEventListener('click',()=>openLinkByIpoModal());
+  main.querySelectorAll('[data-use-profit]').forEach(el=>el.addEventListener('click',()=>useLinkedProfit(el.dataset.useProfit)));
   main.querySelectorAll('[data-toggle-fund]').forEach(el=>el.addEventListener('click',()=>{ const id=el.dataset.toggleFund; State._fundOpen[id]=!State._fundOpen[id]; renderFunds(main); }));
   main.querySelectorAll('[data-edit-fund]').forEach(el=>el.addEventListener('click',()=>openFundModal(el.dataset.editFund)));
   main.querySelectorAll('[data-del-fund]').forEach(el=>el.addEventListener('click',()=>confirmDeleteFund(el.dataset.delFund)));
@@ -1841,7 +1881,10 @@ function openFundModal(editId){
         <label class="field">Name<input type="text" id="f-name" value="${f?esc(f.name):''}" placeholder="e.g. IPO fund, Uncle’s fund"></label>
         <label class="field">Partner (optional)<input type="text" id="f-partner" value="${f?esc(f.partner||''):''}" placeholder="e.g. Uncle — leave empty if it is only your money"></label>
         <label class="field">Your share of the profit (%)<input type="number" id="f-share" inputmode="decimal" value="${f?fundSharePct(f):100}"></label>
-        <label class="field">Money in this fund now (₹)<input type="number" id="f-capital" inputmode="decimal" value="${f?(f.capital||0):''}" placeholder="e.g. 200000"></label>
+        <label class="field">Total money in this fund (₹) <span class="set-sub">— including any already in IPOs</span><input type="number" id="f-capital" inputmode="decimal" value="${f?(f.capital||0):''}" placeholder="e.g. 200000"></label>
+        <label class="field">Which account holds it?
+          <select id="f-home">${State.banks.map(b=>`<option value="${b.id}" ${b.id===(f&&f.homeBankId ? f.homeBankId : (primaryBank()||{}).id)?'selected':''}>${esc(bankLabel(b))}</option>`).join('')}</select>
+        </label>
       </div>
       <div class="set-sub" style="margin-top:8px;">The profit from IPOs funded here is split by that percentage after your commission: your part counts as your profit, the partner’s part is shown as money you are holding for them.</div>
       <div class="modal-actions"><button class="btn ghost" data-close="1">Cancel</button><button class="btn primary" id="f-save">Save</button></div>
@@ -1851,7 +1894,7 @@ function openFundModal(editId){
     if(!name){ toast('Enter a name'); return; }
     const share = Math.max(0, Math.min(100, Number(document.getElementById('f-share').value)));
     const obj = f || { id: uid(), kind:'fund' };
-    Object.assign(obj, { name, partner: document.getElementById('f-partner').value.trim(), mySharePct: isNaN(share)?100:share, capital: Number(document.getElementById('f-capital').value)||0 });
+    Object.assign(obj, { name, partner: document.getElementById('f-partner').value.trim(), mySharePct: isNaN(share)?100:share, capital: Number(document.getElementById('f-capital').value)||0, homeBankId: (document.getElementById('f-home')||{}).value || '' });
     await idbPut('sales', obj); if(!f) State.sales.push(obj);
     closeModal(); toast(f?'Fund updated':'Fund added'); render();
   });
@@ -1894,6 +1937,47 @@ function openFundFlowModal(fundId, type){
     await idbPut('sales', obj); State.sales.push(obj);
     closeModal(); toast('Recorded'); render();
   });
+}
+function openLinkByIpoModal(){
+  const funds = allFunds();
+  if(!funds.length){ toast('Create a fund first'); return; }
+  const un = State.applications.filter(a=>!fundById(a.fundId)), byIpo = {};
+  un.forEach(a=>{ (byIpo[a.ipoId]=byIpo[a.ipoId]||[]).push(a); });
+  const ids = Object.keys(byIpo);
+  if(!ids.length){ toast('Every application is already linked to a fund'); return; }
+  ids.sort((x,y)=> (byIpo[y][0].appliedDate||'').localeCompare(byIpo[x][0].appliedDate||''));
+  openModal(`
+    <div class="modal">
+      <h3>Link applications to funds</h3>
+      <div class="set-sub" style="margin-bottom:8px;">${un.length} application${un.length>1?'s':''} aren’t linked yet. Choose a fund for each IPO (leave “—” to skip). Sales already recorded for those IPOs get the fund’s profit split too.</div>
+      <div style="max-height:52vh;overflow:auto;">
+      ${ids.map(iid=>{ const ipo=ipoById(iid), list=byIpo[iid]; return `<div class="set-row"><div><div class="set-label">${esc(ipo?ipo.name:'IPO')}</div><div class="set-sub tabular">${list.length} application${list.length>1?'s':''} · ${fmtMoney(list.reduce((t,a)=>t+(a.amount||0),0))}</div></div>
+        <select data-link-ipo="${iid}" class="sel-sm" style="flex:none;width:44%;"><option value="">—</option>${funds.map(f=>`<option value="${f.id}">${esc(f.name)}</option>`).join('')}</select></div>`; }).join('')}
+      </div>
+      <div class="modal-actions"><button class="btn ghost" data-close="1">Cancel</button><button class="btn primary" id="lk-save">Link</button></div>
+    </div>`);
+  document.getElementById('lk-save').addEventListener('click', async ()=>{
+    let n=0;
+    for(const sel of document.querySelectorAll('[data-link-ipo]')){
+      if(!sel.value) continue;
+      const f = fundById(sel.value), list = byIpo[sel.dataset.linkIpo], idset = new Set(list.map(a=>a.id));
+      for(const a of list){ a.fundId = f.id; await idbPut('applications', a); n++; }
+      for(const x of realSales().filter(v=>idset.has(v.applicationId))){ x.fundId = f.id; x.mySharePct = fundSharePct(f); await idbPut('sales', x); }
+    }
+    closeModal(); toast(n ? `Linked ${n} application${n>1?'s':''}` : 'Nothing linked'); render();
+  });
+}
+async function useLinkedProfit(fundId){
+  const f = fundById(fundId); if(!f || f.virtual) return;
+  const cap = fundCapital(fundId);
+  if(!window.confirm(`Replace “${f.name}” with the built-in Profit fund that follows the Profit tab?\n\n• Its applications and sales move to the linked Profit fund\n• ${cap>0 ? `Its ₹${cap.toLocaleString('en-IN')} is added to your Earlier profit so your profit total stays the same\n• `:''}This fund is then removed`)) return;
+  for(const a of State.applications.filter(x=>x.fundId===fundId)){ a.fundId='profit'; await idbPut('applications', a); }
+  for(const x of realSales().filter(v=>saleFundId(v)===fundId)){ x.fundId='profit'; x.mySharePct=100; await idbPut('sales', x); }
+  if(cap>0){ const e={ id:uid(), kind:'earlier', amount:cap, date:todayStr(), note:`From the “${f.name}” fund` }; await idbPut('sales', e); State.sales.push(e); }
+  for(const x of fundFlows(fundId)){ await idbDelete('sales', x.id); }
+  await idbDelete('sales', fundId);
+  State.sales = State.sales.filter(x=>x.id!==fundId && !(x.kind==='fundflow' && x.fundId===fundId));
+  toast('Now using the linked Profit fund'); render();
 }
 function openAssignFundModal(appIds, label){
   const funds = allFunds();
@@ -1952,6 +2036,7 @@ function renderBanks(main){
         <div class="main" data-toggle-bank="${b.id}" style="cursor:pointer;flex:1;">
           <div class="title">${esc(b.name)}${b.isPrimary?' <span class="al-cat">Primary</span>':''}</div>
           <div class="meta tabular">Available ${fmtMoney(avail)} · Blocked ${fmtMoney(blocked)}</div>
+          ${allFunds().length ? (()=>{ const bd = bankFundBreakdown(b.id); const bits = bd.parts.map(x=>`${esc(x.f.name)} ${fmtMoney(x.v)}`); if(Math.abs(bd.untracked)>=1) bits.push(`<span style="color:var(--gold);">Untracked ${bd.untracked<0?'−':''}${fmtMoney(Math.abs(bd.untracked))}</span>`); return bits.length ? `<div class="meta tabular">Whose: ${bits.join(' · ')}</div>` : ''; })() : ''}
         </div>
         <div class="actions">
           <button class="iconbtn chev-btn" data-toggle-bank="${b.id}" title="${open?'Hide':'Show'} statement" aria-expanded="${open}"><span class="chev ${open?'open':''}">⌄</span></button>
@@ -3047,6 +3132,9 @@ function openTransferModal(preFrom, preTo){
           <select id="t-to"><option value="" ${to0===''?'selected':''}>Outside — taken out / spent</option>${bankOpts(to0)}</select>
         </label>
         <label class="field">Amount (₹)<input type="number" id="t-amount" inputmode="decimal" placeholder="0"></label>
+        ${allFunds().length ? `<label class="field">Whose money is it?
+          <select id="t-fund"><option value="">Not tracked</option>${allFunds().map(f=>`<option value="${f.id}" ${f.id===lsGet('ipoledger_lasttransferfund','')?'selected':''}>${esc(f.name)}</option>`).join('')}</select>
+        </label><div class="set-sub" style="margin-top:-4px;">Pick the fund so the app keeps knowing whose money is in which account.</div>` : ''}
         <label class="field">Date<input type="date" id="t-date" value="${todayStr()}"></label>
         <label class="field">Note (optional)<input type="text" id="t-note"></label>
       </div>
@@ -3065,7 +3153,9 @@ function openTransferModal(preFrom, preTo){
     if(!fromBankId && !toBankId){ toast('Pick at least one of your accounts'); return; }
     if(fromBankId===toBankId){ toast('From and To must be different'); return; }
     if(amount<=0){ toast('Enter a valid amount'); return; }
-    const obj = { id: uid(), fromBankId, toBankId, amount, date, note };
+    const fundId = (document.getElementById('t-fund')||{}).value || '';
+    if(fundId) lsSet('ipoledger_lasttransferfund', fundId);
+    const obj = { id: uid(), fromBankId, toBankId, amount, date, note, fundId };
     await idbPut('transfers', obj);
     State.transfers.push(obj);
     closeModal(); toast('Recorded'); render();
@@ -3111,6 +3201,7 @@ function renderProfit(main){
       <span class="chip tabular">This month <b style="color:${thisMonth>=0?'var(--green)':'var(--rust)'};">${thisMonth>=0?'+':'−'}${fmtMoney(Math.abs(thisMonth))}</b></span>
       ${earlier ? `<span class="chip tabular">Earlier profit <b>${fmtMoney(earlier)}</b></span>` : ''}
       ${withdrawn ? `<span class="chip tabular">Withdrawn <b style="color:var(--rust);">${fmtMoney(withdrawn)}</b></span>` : ''}
+      ${(()=>{ const pu = fundUse('profit'); return (pu.pending>0 || pu.shares>0) ? `<span class="chip tabular">Profit blocked in IPOs <b>${fmtMoney(pu.pending)}</b></span>${pu.shares>0?`<span class="chip tabular">Profit in shares <b>${fmtMoney(pu.shares)}</b></span>`:''}` : ''; })()}
       ${allFunds().filter(f=>f.partner).map(f=>({n:f.partner,v:partnerHeld(f.id)})).filter(x=>Math.abs(x.v)>=0.5).map(x=>`<span class="chip tabular">Held for ${esc(x.n)} <b>${fmtMoney(x.v)}</b></span>`).join('')}
     </div>
 
