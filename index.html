@@ -410,7 +410,7 @@ button.chip{ background:none; cursor:pointer; font-family:inherit; color:var(--i
    ========================================================= */
 
 /* ---------- ICONS (tiny inline svg set) ---------- */
-const APP_VERSION = '2.7';
+const APP_VERSION = '2.8';
 const ICONS = {
   back: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>`,
   list: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 6h13M8 12h13M8 18h13"/><path d="M3 6h.01M3 12h.01M3 18h.01"/></svg>`,
@@ -969,19 +969,22 @@ function fundHome(f){                              // the account a fund's money
   return b ? b.id : null;
 }
 function fundLocations(fundId){
-  // How much of this fund's FREE money is in each account. Starts at the fund's home account, then follows
+  // How much of this fund's FREE money is in each account. It starts at the fund's home account, then follows
   // the moves you tag with this fund, the applications you fund from it, and where sale money landed.
+  // Anything that went through an account that no longer exists (or a sale with no account) counts as "at home",
+  // so the numbers below always add up to the fund's Free amount.
   const f = fundById(fundId), loc = {};
   State.banks.forEach(b=>{ loc[b.id]=0; });
   const home = fundHome(f); if(!home || !f) return loc;
-  const add = (b,v)=>{ if(b in loc) loc[b] += v; };
+  const where = (id)=> (id && (id in loc)) ? id : home;
+  const add = (b,v)=>{ loc[b] += v; };
   add(home, fundCapital(fundId));
-  State.transfers.filter(t=>t.fundId===fundId && t.fromBankId && t.toBankId).forEach(t=>{ add(t.fromBankId,-(t.amount||0)); add(t.toBankId,t.amount||0); });
-  State.applications.filter(a=>a.fundId===fundId).forEach(a=>{ add(a.bankId, -(a.amount||0)); add(a.bankId, a.refundedAmount||0); });
+  State.transfers.filter(t=>t.fundId===fundId && t.fromBankId && t.toBankId).forEach(t=>{ add(where(t.fromBankId),-(t.amount||0)); add(where(t.toBankId),t.amount||0); });
+  State.applications.filter(a=>a.fundId===fundId).forEach(a=>{ add(where(a.bankId), -(a.amount||0)); add(where(a.bankId), a.refundedAmount||0); });
   realSales().forEach(x=>{
-    if(!x.bankId || x.bankId==='none') return;
-    if(saleFundId(x)===fundId) add(x.bankId, x.investment||0);                 // capital comes back where the cash landed
-    if(fundId==='profit'){ const gain = (x.saleAmount||0)-(x.investment||0); add(home,-gain); add(x.bankId,gain); }   // profit lands where the cash landed
+    const landing = where(x.bankId==='none' ? '' : x.bankId);
+    if(saleFundId(x)===fundId) add(landing, x.investment||0);                   // capital comes back where the cash landed
+    if(fundId==='profit'){ const gain = (x.saleAmount||0)-(x.investment||0); add(home,-gain); add(landing,gain); }   // profit lands where the cash landed
   });
   return loc;
 }
@@ -999,7 +1002,12 @@ function partnerHeld(fundId){                                           // partn
 function totalPartnerHeld(){ return allFunds().reduce((t,f)=>t+partnerHeld(f.id),0); }
 function pickFundId(flow){
   const fs = allFunds(); if(!fs.length) return '';
-  if(flow && flow.fundId && fundById(flow.fundId)) return flow.fundId;
+  if(flow && flow.fundId && fundById(flow.fundId)) return flow.fundId;             // you tapped one: respect it
+  if(flow && flow.bankId && bankById(flow.bankId)){                                // otherwise suggest the fund with the most money in this account
+    let best = '', bestV = 0;
+    fs.forEach(f=>{ const v = (fundLocations(f.id)[flow.bankId]||0); if(v>bestV){ best=f.id; bestV=v; } });
+    if(best) return best;
+  }
   const last = lsGet('ipoledger_lastfund',''); return fundById(last) ? last : fs[0].id;
 }
 function totalProfitAll(){
@@ -1499,7 +1507,7 @@ function renderApply(main){
         </div>`).join('')}
     `;
     bankSlot.querySelectorAll('[data-bank]').forEach(el=>el.addEventListener('click',()=>{
-      flow.bankId = el.dataset.bank; flow.selected = new Map();
+      flow.bankId = el.dataset.bank; flow.selected = new Map(); delete flow.fundId;      // new account -> suggest its fund again
       renderApplyDetails();
     }));
     // "Same as last time": last bank + applicants you applied with, minus anyone already applied to this IPO
@@ -1545,7 +1553,9 @@ function renderApply(main){
       <div class="pill-tabs" style="margin:10px 0 8px;" id="cat-tabs">${CATEGORIES.map(([k,l])=>`<button data-cat="${k}" class="${cat===k?'active':''}">${l}</button>`).join('')}</div>
       ${allFunds().length ? `<div class="set-sub" style="margin:2px 0 4px;">Funded from</div><div class="pill-tabs" style="margin:0 0 8px;" id="fund-tabs">${allFunds().map(f=>`<button data-fund="${f.id}" class="${pickFundId(flow)===f.id?'active':''}">${esc(f.name)}</button>`).join('')}</div>
         ${(()=>{ const fid = pickFundId(flow), bk = flow.bankId && bankById(flow.bankId); if(!fid || !bk) return ''; const have = Math.round((fundLocations(fid)[bk.id]||0)*100)/100; const fn = (fundById(fid)||{}).name;
-          return `<div class="set-sub tabular" style="margin:0 0 8px;color:${have>0?'var(--ink-faint)':'var(--gold)'};">${esc(fn)}’s money in ${esc(bankLabel(bk))}: ${fmtMoney(have)}${have<=0?' — move some there first (Banks → Move money)':''}</div>`; })()}` : ''}
+          let need = 0; (flow.selected||new Map()).forEach((lots)=>{ need += (typeof lotAmt!=='undefined' ? lotAmt : 0) * lots; });
+          const short = need>0 && have<need;
+          return `<div class="set-sub tabular" style="margin:0 0 8px;color:${(have>0 && !short)?'var(--ink-faint)':'var(--gold)'};">${esc(fn)}’s money in ${esc(bankLabel(bk))}: ${fmtMoney(have)}${short?` — this batch needs ${fmtMoney(need)}; move ${fmtMoney(need-have)} there first (Banks → Move money)`:(have<=0?' — move some there first (Banks → Move money)':'')}</div>`; })()}` : ''}
       ${minLots>1?`<div style="font-size:12px;color:var(--gold);margin-bottom:8px;">This is an SME IPO — minimum ${minLots} lots per application.</div>`:''}
       <div class="card" style="padding:6px 12px;">
         ${State.applicants.map(a=>{
