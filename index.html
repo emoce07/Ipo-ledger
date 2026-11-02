@@ -410,7 +410,7 @@ button.chip{ background:none; cursor:pointer; font-family:inherit; color:var(--i
    ========================================================= */
 
 /* ---------- ICONS (tiny inline svg set) ---------- */
-const APP_VERSION = '2.8';
+const APP_VERSION = '2.9';
 const ICONS = {
   back: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>`,
   list: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 6h13M8 12h13M8 18h13"/><path d="M3 6h.01M3 12h.01M3 18h.01"/></svg>`,
@@ -1824,17 +1824,17 @@ function renderFunds(main){
     const u = fundUse(f.id), pr = fundProfit(f.id), open = !!State._fundOpen[f.id], held = partnerHeld(f.id), pct = fundSharePct(f);
     let body = '';
     if(open){
-      const apps = State.applications.filter(a=>a.fundId===f.id), byIpo = {};
-      apps.forEach(a=>{ (byIpo[a.ipoId]=byIpo[a.ipoId]||[]).push(a); });
-      const ids = new Set(apps.map(a=>a.id)), sold = new Set(realSales().filter(x=>ids.has(x.applicationId)).map(x=>x.applicationId));
+      // only what is live right now: applications still waiting for a result, and allotted shares not sold yet
+      const soldIds = new Set(realSales().map(x=>x.applicationId));
+      const live = State.applications.filter(a=>a.fundId===f.id && ((a.allotmentStatus||'pending')==='pending' || ((a.allottedAmount||0)>0 && !soldIds.has(a.id))));
+      const byIpo = {};
+      live.forEach(a=>{ (byIpo[a.ipoId]=byIpo[a.ipoId]||[]).push(a); });
       const rows = Object.keys(byIpo).map(iid=>{
-        const list = byIpo[iid], ipo = ipoById(iid), amt = list.reduce((t,a)=>t+(a.amount||0),0);
-        const c = { pending:0, held:0, sold:0, back:0 };
-        list.forEach(a=>{ if((a.allotmentStatus||'pending')==='pending') c.pending++; else if(sold.has(a.id)) c.sold++; else if((a.allottedAmount||0)>0) c.held++; else c.back++; });
-        const status = [c.pending?`${c.pending} waiting`:'', c.held?`${c.held} in shares`:'', c.sold?`${c.sold} sold`:'', c.back?`${c.back} refunded`:''].filter(Boolean).join(' · ');
-        const sp = realSales().filter(x=>ids.has(x.applicationId) && list.some(a=>a.id===x.applicationId));
-        const mine = sp.reduce((t,x)=>t+saleNet(x),0), oth = sp.reduce((t,x)=>t+salePartnerShare(x),0);
-        return `<div class="list-item"><div class="main"><div class="title" style="font-weight:500;font-size:13.5px;">${esc(ipo?ipo.name:'IPO')}</div><div class="meta tabular">${list.length} application${list.length>1?'s':''} · ${fmtMoney(amt)} · ${status}</div>${sp.length?`<div class="meta tabular">Profit: you ${fmtMoney(mine)}${f.partner?` · ${esc(f.partner)} ${fmtMoney(oth)}`:''}</div>`:''}</div></div>`;
+        const list = byIpo[iid], ipo = ipoById(iid);
+        const waiting = list.filter(a=>(a.allotmentStatus||'pending')==='pending'), held = list.filter(a=>(a.allotmentStatus||'pending')!=='pending');
+        const wAmt = waiting.reduce((t,a)=>t+(a.amount||0),0), hAmt = held.reduce((t,a)=>t+(a.allottedAmount||0),0);
+        const bits = [waiting.length?`${waiting.length} waiting · ${fmtMoney(wAmt)} blocked`:'', held.length?`${held.length} allotted, not sold · ${fmtMoney(hAmt)}`:''].filter(Boolean).join('  |  ');
+        return `<div class="list-item"><div class="main"><div class="title" style="font-weight:500;font-size:13.5px;">${esc(ipo?ipo.name:'IPO')}</div><div class="meta tabular">${bits}</div></div></div>`;
       }).join('');
       body = `<div class="bank-stmt">
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 8px;">
@@ -1842,7 +1842,7 @@ function renderFunds(main){
           ${(!f.virtual && /^profit$/i.test((f.name||'').trim())) ? `<button class="btn sm primary" data-use-profit="${f.id}">Use the linked Profit fund instead</button>` : ''}
           ${f.partner ? `<button class="btn sm ghost" data-fund-flow="${f.id}|owed">${esc(f.partner)}’s profit: pay out / adjust</button>` : ''}
         </div>
-        ${rows || '<div class="set-sub" style="padding:6px 0;">No applications from this fund yet. Choose it under “Funded from” on the Apply screen.</div>'}
+        ${rows || '<div class="set-sub" style="padding:6px 0;">Nothing applied or held in shares from this fund right now.</div>'}
       </div>`;
     }
     return `<div class="bank-item"><div class="list-item">
