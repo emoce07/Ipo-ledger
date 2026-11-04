@@ -410,7 +410,7 @@ button.chip{ background:none; cursor:pointer; font-family:inherit; color:var(--i
    ========================================================= */
 
 /* ---------- ICONS (tiny inline svg set) ---------- */
-const APP_VERSION = '2.9';
+const APP_VERSION = '3.0';
 const ICONS = {
   back: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>`,
   list: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 6h13M8 12h13M8 18h13"/><path d="M3 6h.01M3 12h.01M3 18h.01"/></svg>`,
@@ -785,11 +785,12 @@ async function removeDemoData(){
 const CATEGORIES = [['retail','Retail'],['shareholder','Shareholder'],['employee','Employee'],['hni','HNI / NII']];
 function catName(k){ const c=CATEGORIES.find(x=>x[0]===k); return c?c[1]:'Retail'; }
 function ipoPricePerShare(ipo){ return Number(ipo.maxPrice) || parseMaxPriceFromBand(ipo.priceBand) || 0; }
-function catTag(a){                         // category (non-retail / multiple) + fund tag
+function catTag(a){                         // category (non-retail / multiple) + the fund(s) that paid
   const k = a.category || 'retail';
   const multi = State.applications.filter(x=>x.ipoId===a.ipoId && x.applicantId===a.applicantId).length>1;
-  const f = fundById(a.fundId);
-  return ((k!=='retail' || multi) ? `<span class="al-cat">${esc(catName(k))}</span>` : '') + (f ? `<span class="al-cat fund">${esc(f.name)}</span>` : '');
+  const sh = appFundShares(a);
+  const fundChip = sh.length ? `<span class="al-cat fund">${sh.map(x=>esc(fundById(x.fundId).name)).join(' + ')}</span>` : '';
+  return ((k!=='retail' || multi) ? `<span class="al-cat">${esc(catName(k))}</span>` : '') + fundChip;
 }
 function isRecentIpo(ipo, hasPending, now){
   if(hasPending) return true;                                   // you still have a result to enter
@@ -945,24 +946,49 @@ function saleTotalProfit(x){ return (x.saleAmount||0) - (x.investment||0) - (x.c
 function saleNet(x){ const pct = (x.mySharePct==null || x.mySharePct==='') ? 100 : Number(x.mySharePct); return saleTotalProfit(x)*pct/100; }   // YOUR share
 function salePartnerShare(x){ return saleTotalProfit(x) - saleNet(x); }
 function saleFundId(x){ return x.fundId || ((State.applications.find(a=>a.id===x.applicationId)||{}).fundId) || ''; }
+function appFundShares(a){                      // [{fundId, frac}] — how much of this application each fund paid
+  if(!a) return [];
+  const amt = Number(a.amount)||0;
+  const sp = Array.isArray(a.fundSplit) ? a.fundSplit.filter(e=>fundById(e.fundId) && Number(e.amount)>0) : [];
+  if(sp.length && amt>0){ const tot = sp.reduce((t,e)=>t+Number(e.amount),0); return sp.map(e=>({ fundId:e.fundId, frac:Number(e.amount)/Math.max(tot,amt) })); }
+  return fundById(a.fundId) ? [{ fundId:a.fundId, frac:1 }] : [];
+}
+function fracOf(a, fundId){ const e = appFundShares(a).find(x=>x.fundId===fundId); return e ? e.frac : 0; }
+function saleShares(x){ const a = State.applications.find(v=>v.id===x.applicationId), sh = appFundShares(a); return sh.length ? sh : (fundById(x.fundId) ? [{ fundId:x.fundId, frac:1 }] : []); }
+function saleFundFrac(x, fundId){ const e = saleShares(x).find(v=>v.fundId===fundId); return e ? e.frac : 0; }
+function weightedSharePct(shares){              // blended "your share %" across the funds that paid
+  const tot = shares.reduce((t,x)=>t+x.frac,0); if(!tot) return 100;
+  return shares.reduce((t,x)=>t+x.frac*fundSharePct(fundById(x.fundId)),0)/tot;
+}
+function saleMineFor(x, fundId){                // the part of YOUR profit on this sale that belongs to this fund
+  const sh = saleShares(x), me = sh.find(v=>v.fundId===fundId); if(!me) return 0;
+  const w = (v)=>v.frac*fundSharePct(fundById(v.fundId))/100, tot = sh.reduce((t,v)=>t+w(v),0);
+  return tot>0 ? saleNet(x)*w(me)/tot : saleNet(x)*me.frac/(sh.reduce((t,v)=>t+v.frac,0)||1);
+}
+function salePartnerFor(x, fundId){             // the part of the PARTNER's profit on this sale that belongs to this fund
+  const sh = saleShares(x), me = sh.find(v=>v.fundId===fundId); if(!me) return 0;
+  const w = (v)=>v.frac*(1-fundSharePct(fundById(v.fundId))/100), tot = sh.reduce((t,v)=>t+w(v),0);
+  return tot>0 ? salePartnerShare(x)*w(me)/tot : 0;
+}
 function fundCapital(fundId){
   if(fundId==='profit') return availableBalance() + totalPartnerHeld();      // your profit after spending, plus profit you hold for partners
   const f=fundById(fundId); return (Number(f&&f.capital)||0) + fundFlows(fundId).filter(x=>x.type==='capital').reduce((t,x)=>t+(Number(x.amount)||0),0); }
 function fundUse(fundId){
-  const apps = State.applications.filter(a=>a.fundId===fundId), ids = new Set(apps.map(a=>a.id));
-  const sales = realSales().filter(x=>ids.has(x.applicationId)), sold = new Set(sales.map(x=>x.applicationId));
-  let applied=0, refunded=0, pending=0, shares=0;
-  apps.forEach(a=>{
-    applied += a.amount||0; refunded += a.refundedAmount||0;
-    if((a.allotmentStatus||'pending')==='pending') pending += a.amount||0;
-    if((a.allottedAmount||0)>0 && !sold.has(a.id)) shares += a.allottedAmount||0;
+  const soldBy = {}; realSales().forEach(x=>{ (soldBy[x.applicationId]=soldBy[x.applicationId]||[]).push(x); });
+  let applied=0, refunded=0, pending=0, shares=0, soldBack=0;
+  State.applications.forEach(a=>{
+    const fr = fracOf(a, fundId); if(!fr) return;
+    const sold = soldBy[a.id];
+    applied += (a.amount||0)*fr; refunded += (a.refundedAmount||0)*fr;
+    if((a.allotmentStatus||'pending')==='pending') pending += (a.amount||0)*fr;
+    if((a.allottedAmount||0)>0 && !sold) shares += (a.allottedAmount||0)*fr;
+    if(sold) soldBack += sold.reduce((t,x)=>t+(x.investment||0),0)*fr;             // your capital comes back when shares are sold
   });
-  const soldBack = sales.reduce((t,x)=>t+(x.investment||0),0);          // your capital comes back when shares are sold
   return { pending, shares, free: fundCapital(fundId) - applied + refunded + soldBack };
 }
 function fundProfit(fundId){
-  const sales = realSales().filter(x=>saleFundId(x)===fundId);
-  return { mine: sales.reduce((t,x)=>t+saleNet(x),0), partner: sales.reduce((t,x)=>t+salePartnerShare(x),0) };
+  const sales = realSales().filter(x=>saleFundFrac(x,fundId)>0);
+  return { mine: sales.reduce((t,x)=>t+saleMineFor(x,fundId),0), partner: sales.reduce((t,x)=>t+salePartnerFor(x,fundId),0) };
 }
 function fundHome(f){                              // the account a fund's money sits in by default
   const b = f && f.homeBankId && bankById(f.homeBankId) ? bankById(f.homeBankId) : (primaryBank() || State.banks[0] || null);
@@ -980,10 +1006,10 @@ function fundLocations(fundId){
   const add = (b,v)=>{ loc[b] += v; };
   add(home, fundCapital(fundId));
   State.transfers.filter(t=>t.fundId===fundId && t.fromBankId && t.toBankId).forEach(t=>{ add(where(t.fromBankId),-(t.amount||0)); add(where(t.toBankId),t.amount||0); });
-  State.applications.filter(a=>a.fundId===fundId).forEach(a=>{ add(where(a.bankId), -(a.amount||0)); add(where(a.bankId), a.refundedAmount||0); });
+  State.applications.forEach(a=>{ const fr = fracOf(a, fundId); if(!fr) return; add(where(a.bankId), -(a.amount||0)*fr); add(where(a.bankId), (a.refundedAmount||0)*fr); });
   realSales().forEach(x=>{
     const landing = where(x.bankId==='none' ? '' : x.bankId);
-    if(saleFundId(x)===fundId) add(landing, x.investment||0);                   // capital comes back where the cash landed
+    const fr = saleFundFrac(x, fundId); if(fr) add(landing, (x.investment||0)*fr);                   // capital comes back where the cash landed
     if(fundId==='profit'){ const gain = (x.saleAmount||0)-(x.investment||0); add(home,-gain); add(landing,gain); }   // profit lands where the cash landed
   });
   return loc;
@@ -995,7 +1021,7 @@ function bankFundBreakdown(bankId){
   return { parts, untracked };
 }
 function partnerHeld(fundId){                                           // partner's profit you are holding for them
-  const fromSales = realSales().filter(x=>saleFundId(x)===fundId).reduce((t,x)=>t+salePartnerShare(x),0);
+  const fromSales = realSales().filter(x=>saleFundFrac(x,fundId)>0).reduce((t,x)=>t+salePartnerFor(x,fundId),0);
   const flows = fundFlows(fundId).filter(x=>x.type==='owed').reduce((t,x)=>t+(Number(x.amount)||0),0);   // + adjustments, − payouts
   return fromSales + flows;
 }
@@ -1436,7 +1462,7 @@ function renderApply(main){
         <div class="sub">${ipoStatus(i).label} · ${fmtDate(i.openDate)}–${fmtDate(i.closeDate)}</div>
       </div>`).join('')}</div>`;
     dropdown.querySelectorAll('[data-pick]').forEach(el=>el.addEventListener('click',()=>{
-      flow.ipoId = el.dataset.pick; flow.bankId=null; flow.selected=new Map(); flow.category='retail';
+      flow.ipoId = el.dataset.pick; flow.bankId=null; flow.selected=new Map(); flow.category='retail'; delete flow.split;
       closeDropdown();
       searchInput.value = ipoById(flow.ipoId).name;
       renderApplyDetails();
@@ -1551,11 +1577,14 @@ function renderApply(main){
         <div style="font-size:12px;color:var(--ink-faint);" class="tabular">Available ${fmtMoney(avail)} · Blocked ${fmtMoney(blocked)}</div>
       </div>
       <div class="pill-tabs" style="margin:10px 0 8px;" id="cat-tabs">${CATEGORIES.map(([k,l])=>`<button data-cat="${k}" class="${cat===k?'active':''}">${l}</button>`).join('')}</div>
-      ${allFunds().length ? `<div class="set-sub" style="margin:2px 0 4px;">Funded from</div><div class="pill-tabs" style="margin:0 0 8px;" id="fund-tabs">${allFunds().map(f=>`<button data-fund="${f.id}" class="${pickFundId(flow)===f.id?'active':''}">${esc(f.name)}</button>`).join('')}</div>
-        ${(()=>{ const fid = pickFundId(flow), bk = flow.bankId && bankById(flow.bankId); if(!fid || !bk) return ''; const have = Math.round((fundLocations(fid)[bk.id]||0)*100)/100; const fn = (fundById(fid)||{}).name;
+      ${allFunds().length ? `<div class="set-sub" style="margin:2px 0 4px;">Funded from</div><div class="pill-tabs" style="margin:0 0 6px;" id="fund-tabs">${allFunds().map(f=>`<button data-fund="${f.id}" class="${(!flow.split && pickFundId(flow)===f.id)?'active':''}">${esc(f.name)}</button>`).join('')}</div>
+        <div style="margin:0 0 8px;"><button class="al-link" id="split-funds">${flow.split?'Edit split…':'Paid by more than one fund? Split…'}</button>${flow.split?` <button class="al-link" id="clear-split">Clear</button>`:''}</div>
+        ${flow.split ? `<div class="set-sub tabular" style="margin:0 0 6px;color:var(--seal);">Split: ${flow.split.map(p=>`${esc((fundById(p.fundId)||{}).name)} ${Math.round(p.frac*100)}%`).join(' · ')}</div>` : ''}
+        ${(()=>{ const bk = flow.bankId && bankById(flow.bankId); if(!bk) return '';
           let need = 0; (flow.selected||new Map()).forEach((lots)=>{ need += (typeof lotAmt!=='undefined' ? lotAmt : 0) * lots; });
-          const short = need>0 && have<need;
-          return `<div class="set-sub tabular" style="margin:0 0 8px;color:${(have>0 && !short)?'var(--ink-faint)':'var(--gold)'};">${esc(fn)}’s money in ${esc(bankLabel(bk))}: ${fmtMoney(have)}${short?` — this batch needs ${fmtMoney(need)}; move ${fmtMoney(need-have)} there first (Banks → Move money)`:(have<=0?' — move some there first (Banks → Move money)':'')}</div>`; })()}` : ''}
+          const parts = flow.split ? flow.split : (pickFundId(flow) ? [{ fundId:pickFundId(flow), frac:1 }] : []);
+          return parts.map(pt=>{ const fn = (fundById(pt.fundId)||{}).name, have = Math.round((fundLocations(pt.fundId)[bk.id]||0)*100)/100, need_i = need*pt.frac, short = need_i>0 && have<need_i;
+            return `<div class="set-sub tabular" style="margin:0 0 6px;color:${(have>0 && !short)?'var(--ink-faint)':'var(--gold)'};">${esc(fn)}’s money in ${esc(bankLabel(bk))}: ${fmtMoney(have)}${short?` — needs ${fmtMoney(need_i)}; move ${fmtMoney(need_i-have)} there first (Banks → Move money)`:(have<=0?' — move some there first (Banks → Move money)':'')}</div>`; }).join(''); })()}` : ''}
       ${minLots>1?`<div style="font-size:12px;color:var(--gold);margin-bottom:8px;">This is an SME IPO — minimum ${minLots} lots per application.</div>`:''}
       <div class="card" style="padding:6px 12px;">
         ${State.applicants.map(a=>{
@@ -1578,7 +1607,18 @@ function renderApply(main){
       </div>
       <div id="apply-summary"></div>
     `;
-    applicantSlot.querySelectorAll('[data-fund]').forEach(b=>b.addEventListener('click',()=>{ flow.fundId=b.dataset.fund; renderApplyDetails(); }));
+    applicantSlot.querySelectorAll('[data-fund]').forEach(b=>b.addEventListener('click',()=>{ flow.fundId=b.dataset.fund; delete flow.split; renderApplyDetails(); }));
+    const spBtn = applicantSlot.querySelector('#split-funds'), clBtn = applicantSlot.querySelector('#clear-split');
+    if(clBtn) clBtn.addEventListener('click',()=>{ delete flow.split; renderApplyDetails(); });
+    if(spBtn) spBtn.addEventListener('click',()=>{
+      let need = 0; (flow.selected||new Map()).forEach((lots)=>{ need += lotAmt * lots; });
+      if(!(need>0)){ toast('Tick the applicants first, then split the amount'); return; }
+      openSplitModal(need, flow.split ? flow.split.map(p=>({ fundId:p.fundId, amount:p.frac*need })) : [], (entries)=>{
+        flow.split = entries.map(e=>({ fundId:e.fundId, frac:e.amount/need }));
+        flow.fundId = entries.slice().sort((x,y)=>y.amount-x.amount)[0].fundId;
+        renderApplyDetails();
+      });
+    });
     applicantSlot.querySelectorAll('[data-cat]').forEach(b=>b.addEventListener('click',()=>{ flow.category=b.dataset.cat; flow.selected=new Map(); renderApplyDetails(); }));
     applicantSlot.querySelectorAll('[data-tick]').forEach(el=>el.addEventListener('click',()=>{
       const id = el.dataset.tick;
@@ -1634,13 +1674,20 @@ async function markSelectedApplied(ipo, bank, lotAmt){
       allotmentStatus: 'pending', // pending | not_allotted | allotted
       allottedAmount: 0, refundedAmount: 0, refundDate: null,
     };
+    if(flow.split && flow.split.length){                                   // paid by several funds: record each fund's part
+      const parts = flow.split.map(pt=>({ fundId:pt.fundId, amount: Math.round(amount*pt.frac*100)/100 }));
+      const rem = Math.round((amount - parts.reduce((t,x)=>t+x.amount,0))*100)/100;
+      parts[parts.length-1].amount = Math.round((parts[parts.length-1].amount + rem)*100)/100;
+      app.fundSplit = parts.filter(x=>x.amount>0);
+      app.fundId = app.fundSplit.slice().sort((x,y)=>y.amount-x.amount)[0].fundId;
+    }
     await idbPut('applications', app);
     State.applications.push(app);
     created.push(app);
   }
   if(pickFundId(flow)) lsSet('ipoledger_lastfund', pickFundId(flow));
   lsSet('ipoledger_lastapply', { bankId: bank.id, people: entries.map(([id,lots])=>({id, lots})) });
-  flow.selected = new Map();
+  flow.selected = new Map(); delete flow.split;
   toast(`✅ ${entries.length} marked applied — ${bankLabel(bank)}, ${fmtMoney(totalAmount)}`, { ms:7000, action:{ label:'Undo', fn: async ()=>{
     for(const a of created){ await idbDelete('applications', a.id); }
     const ids = new Set(created.map(a=>a.id));
@@ -1815,7 +1862,7 @@ function bindBankTabs(main){ main.querySelectorAll('[data-btab]').forEach(b=>b.a
 function renderFunds(main){
   State._fundOpen = State._fundOpen || {};
   const funds = allFunds();
-  const unassigned = State.applications.filter(a=>!fundById(a.fundId));
+  const unassigned = State.applications.filter(a=>appFundShares(a).length===0);
   const unAmt = unassigned.reduce((t,a)=>t+(a.amount||0),0);
   const inBanks = totalMoneyInBanks();
   const expected = funds.reduce((t,f)=>{ const u=fundUse(f.id); return t+u.free+u.pending; },0);     // the Profit fund already contains your profit pool
@@ -1824,17 +1871,18 @@ function renderFunds(main){
     const u = fundUse(f.id), pr = fundProfit(f.id), open = !!State._fundOpen[f.id], held = partnerHeld(f.id), pct = fundSharePct(f);
     let body = '';
     if(open){
-      // only what is live right now: applications still waiting for a result, and allotted shares not sold yet
+      // only what is live right now: applications still waiting for a result, and allotted shares not sold yet (this fund's part)
       const soldIds = new Set(realSales().map(x=>x.applicationId));
-      const live = State.applications.filter(a=>a.fundId===f.id && ((a.allotmentStatus||'pending')==='pending' || ((a.allottedAmount||0)>0 && !soldIds.has(a.id))));
+      const live = State.applications.filter(a=>fracOf(a,f.id)>0 && ((a.allotmentStatus||'pending')==='pending' || ((a.allottedAmount||0)>0 && !soldIds.has(a.id))));
       const byIpo = {};
       live.forEach(a=>{ (byIpo[a.ipoId]=byIpo[a.ipoId]||[]).push(a); });
       const rows = Object.keys(byIpo).map(iid=>{
         const list = byIpo[iid], ipo = ipoById(iid);
         const waiting = list.filter(a=>(a.allotmentStatus||'pending')==='pending'), held = list.filter(a=>(a.allotmentStatus||'pending')!=='pending');
-        const wAmt = waiting.reduce((t,a)=>t+(a.amount||0),0), hAmt = held.reduce((t,a)=>t+(a.allottedAmount||0),0);
+        const wAmt = waiting.reduce((t,a)=>t+(a.amount||0)*fracOf(a,f.id),0), hAmt = held.reduce((t,a)=>t+(a.allottedAmount||0)*fracOf(a,f.id),0);
+        const mixed = list.some(a=>appFundShares(a).length>1);
         const bits = [waiting.length?`${waiting.length} waiting · ${fmtMoney(wAmt)} blocked`:'', held.length?`${held.length} allotted, not sold · ${fmtMoney(hAmt)}`:''].filter(Boolean).join('  |  ');
-        return `<div class="list-item"><div class="main"><div class="title" style="font-weight:500;font-size:13.5px;">${esc(ipo?ipo.name:'IPO')}</div><div class="meta tabular">${bits}</div></div></div>`;
+        return `<div class="list-item"><div class="main"><div class="title" style="font-weight:500;font-size:13.5px;">${esc(ipo?ipo.name:'IPO')}${mixed?' <span class="al-cat">shared with other funds</span>':''}</div><div class="meta tabular">${bits}</div></div></div>`;
       }).join('');
       body = `<div class="bank-stmt">
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 8px;">
@@ -1914,7 +1962,7 @@ function confirmDeleteFund(id){
   const used = State.applications.filter(a=>a.fundId===id).length;
   if(!window.confirm(`Delete “${f.name}”?${used?` ${used} application(s) will become unassigned.`:''}`)) return;
   (async()=>{
-    for(const a of State.applications.filter(x=>x.fundId===id)){ a.fundId=''; await idbPut('applications', a); }
+    for(const a of State.applications.filter(x=>x.fundId===id || (x.fundSplit||[]).some(e=>e.fundId===id))){ a.fundSplit=(a.fundSplit||[]).filter(e=>e.fundId!==id); if(a.fundId===id) a.fundId=(a.fundSplit[0]||{}).fundId||''; await idbPut('applications', a); }
     for(const x of fundFlows(id)){ await idbDelete('sales', x.id); }
     await idbDelete('sales', id);
     State.sales = State.sales.filter(x=>x.id!==id && !(x.kind==='fundflow' && x.fundId===id));
@@ -1951,7 +1999,7 @@ function openFundFlowModal(fundId, type){
 function openLinkByIpoModal(){
   const funds = allFunds();
   if(!funds.length){ toast('Create a fund first'); return; }
-  const un = State.applications.filter(a=>!fundById(a.fundId)), byIpo = {};
+  const un = State.applications.filter(a=>appFundShares(a).length===0), byIpo = {};
   un.forEach(a=>{ (byIpo[a.ipoId]=byIpo[a.ipoId]||[]).push(a); });
   const ids = Object.keys(byIpo);
   if(!ids.length){ toast('Every application is already linked to a fund'); return; }
@@ -1981,7 +2029,7 @@ async function useLinkedProfit(fundId){
   const f = fundById(fundId); if(!f || f.virtual) return;
   const cap = fundCapital(fundId);
   if(!window.confirm(`Replace “${f.name}” with the built-in Profit fund that follows the Profit tab?\n\n• Its applications and sales move to the linked Profit fund\n• ${cap>0 ? `Its ₹${cap.toLocaleString('en-IN')} is added to your Earlier profit so your profit total stays the same\n• `:''}This fund is then removed`)) return;
-  for(const a of State.applications.filter(x=>x.fundId===fundId)){ a.fundId='profit'; await idbPut('applications', a); }
+  for(const a of State.applications.filter(x=>x.fundId===fundId || (x.fundSplit||[]).some(e=>e.fundId===fundId))){ if(a.fundId===fundId) a.fundId='profit'; a.fundSplit=(a.fundSplit||[]).map(e=>e.fundId===fundId?{...e,fundId:'profit'}:e); await idbPut('applications', a); }
   for(const x of realSales().filter(v=>saleFundId(v)===fundId)){ x.fundId='profit'; x.mySharePct=100; await idbPut('sales', x); }
   if(cap>0){ const e={ id:uid(), kind:'earlier', amount:cap, date:todayStr(), note:`From the “${f.name}” fund` }; await idbPut('sales', e); State.sales.push(e); }
   for(const x of fundFlows(fundId)){ await idbDelete('sales', x.id); }
@@ -1989,25 +2037,76 @@ async function useLinkedProfit(fundId){
   State.sales = State.sales.filter(x=>x.id!==fundId && !(x.kind==='fundflow' && x.fundId===fundId));
   toast('Now using the linked Profit fund'); render();
 }
+function openSplitModal(total, initial, onSave){
+  const funds = allFunds(); if(!funds.length){ toast('Create a fund first'); return; }
+  const init = {}; (initial||[]).forEach(e=>{ init[e.fundId] = e.amount; });
+  openModal(`
+    <div class="modal">
+      <h3>Split between funds</h3>
+      <div class="set-sub" style="margin-bottom:8px;">Total <b>${fmtMoney(total)}</b>. Enter how much each fund paid.</div>
+      ${funds.map(f=>`<div class="sp-row"><span style="flex:1;font-size:14px;min-width:0;">${esc(f.name)}${f.partner?` <span class="set-sub">— you ${fundSharePct(f)}%</span>`:''}</span>
+        <input type="number" class="num-sm" style="width:110px !important;max-width:110px;" data-split-fund="${f.id}" inputmode="decimal" placeholder="0" value="${init[f.id]?Math.round(init[f.id]):''}">
+        <button class="al-link" data-split-rest="${f.id}">Rest</button></div>`).join('')}
+      <div id="sp-sum" class="set-sub tabular" style="min-height:18px;margin-top:6px;"></div>
+      <div class="modal-actions"><button class="btn ghost" data-close="1">Cancel</button><button class="btn primary" id="sp-save">Save split</button></div>
+    </div>`);
+  const inputs = [...document.querySelectorAll('[data-split-fund]')];
+  const sum = ()=>inputs.reduce((t,i)=>t+(Number(i.value)||0),0);
+  const refresh = ()=>{ const left = Math.round((total-sum())*100)/100, el = document.getElementById('sp-sum');
+    el.style.color = Math.abs(left)<=1 ? 'var(--green)' : 'var(--gold)';
+    el.textContent = Math.abs(left)<=1 ? `✓ ${fmtMoney(sum())} of ${fmtMoney(total)}` : (left>0 ? `${fmtMoney(sum())} of ${fmtMoney(total)} — ${fmtMoney(left)} left to assign` : `${fmtMoney(sum())} of ${fmtMoney(total)} — ${fmtMoney(-left)} too much`); };
+  inputs.forEach(i=>i.addEventListener('input', refresh));
+  document.querySelectorAll('[data-split-rest]').forEach(b=>b.addEventListener('click', ()=>{
+    const inp = document.querySelector(`[data-split-fund="${b.dataset.splitRest}"]`);
+    const rest = Math.round((total - (sum() - (Number(inp.value)||0)))*100)/100;     // everything not covered by the other funds
+    if(rest>0){ inp.value = rest; refresh(); } }));
+  refresh();
+  document.getElementById('sp-save').addEventListener('click', ()=>{
+    const entries = inputs.map(i=>({ fundId:i.dataset.splitFund, amount:Number(i.value)||0 })).filter(e=>e.amount>0);
+    const left = Math.round((total-entries.reduce((t,e)=>t+e.amount,0))*100)/100;
+    if(!entries.length){ toast('Enter an amount for at least one fund'); return; }
+    if(Math.abs(left)>1){ toast(left>0 ? `${fmtMoney(left)} still to assign` : `${fmtMoney(-left)} too much`); return; }
+    closeModal(); onSave(entries);
+  });
+}
+async function applyFundSplit(apps, entries, total){
+  for(const a of apps){
+    const parts = entries.map(e=>({ fundId:e.fundId, amount: Math.round((a.amount||0)*e.amount/total*100)/100 }));
+    const rem = Math.round(((a.amount||0) - parts.reduce((t,x)=>t+x.amount,0))*100)/100;
+    parts[parts.length-1].amount = Math.round((parts[parts.length-1].amount + rem)*100)/100;
+    a.fundSplit = parts.filter(x=>x.amount>0);
+    a.fundId = a.fundSplit.slice().sort((x,y)=>y.amount-x.amount)[0].fundId;                 // main payer, used for the tag
+    await idbPut('applications', a);
+    for(const x of realSales().filter(v=>v.applicationId===a.id)){ x.fundId = a.fundId; x.mySharePct = Math.round(weightedSharePct(appFundShares(a))*100)/100; await idbPut('sales', x); }
+  }
+}
 function openAssignFundModal(appIds, label){
   const funds = allFunds();
   if(!funds.length){ toast('Create a fund first: Banks → Funds'); return; }
   const apps = State.applications.filter(a=>appIds.includes(a.id));
   const sales = realSales().filter(x=>appIds.includes(x.applicationId));
-  const cur = (apps[0]||{}).fundId || '';
+  const total = apps.reduce((t,a)=>t+(a.amount||0),0);
+  const cur = apps.length===1 ? appFundShares(apps[0]) : [];
+  const curSingle = (apps[0]||{}).fundId || '';
   openModal(`
     <div class="modal">
       <h3>Set fund</h3>
-      <div class="set-sub" style="margin-bottom:8px;">${apps.length} application${apps.length!==1?'s':''} · ${fmtMoney(apps.reduce((t,a)=>t+(a.amount||0),0))} in ${esc(label)} will be marked as funded from:</div>
-      ${funds.map(f=>`<label style="display:flex;gap:10px;align-items:center;padding:8px 0;font-size:14px;"><input type="radio" name="fund-pick" value="${f.id}" ${cur===f.id?'checked':''} style="width:18px;height:18px;"> <span>${esc(f.name)}${f.partner?` <span class="set-sub">— you ${fundSharePct(f)}% · ${esc(f.partner)} ${100-fundSharePct(f)}%</span>`:''}</span></label>`).join('')}
-      <label style="display:flex;gap:10px;align-items:center;padding:8px 0;font-size:14px;"><input type="radio" name="fund-pick" value="" ${cur===''?'checked':''} style="width:18px;height:18px;"> <span>No fund</span></label>
-      ${sales.length ? `<div class="set-sub" style="margin-top:6px;">Also updates the profit split on ${sales.length} sale${sales.length>1?'s':''} already recorded for these.</div>` : ''}
+      <div class="set-sub" style="margin-bottom:8px;">${apps.length} application${apps.length!==1?'s':''} · ${fmtMoney(total)} in ${esc(label)} will be marked as funded from:</div>
+      ${funds.map(f=>`<label style="display:flex;gap:10px;align-items:center;padding:8px 0;font-size:14px;"><input type="radio" name="fund-pick" value="${f.id}" ${(cur.length<=1 && curSingle===f.id)?'checked':''} style="width:18px;height:18px;"> <span>${esc(f.name)}${f.partner?` <span class="set-sub">— you ${fundSharePct(f)}% · ${esc(f.partner)} ${100-fundSharePct(f)}%</span>`:''}</span></label>`).join('')}
+      <label style="display:flex;gap:10px;align-items:center;padding:8px 0;font-size:14px;"><input type="radio" name="fund-pick" value="" ${(cur.length<=1 && curSingle==='')?'checked':''} style="width:18px;height:18px;"> <span>No fund</span></label>
+      ${cur.length>1 ? `<div class="set-sub" style="color:var(--gold);">Currently split: ${cur.map(x=>`${esc(fundById(x.fundId).name)} ${Math.round(x.frac*100)}%`).join(' · ')}</div>` : ''}
+      <button class="btn ghost block" id="af-split" style="margin-top:10px;">Split between several funds…</button>
+      ${sales.length ? `<div class="set-sub" style="margin-top:6px;">Sales already recorded for these get the matching profit split too.</div>` : ''}
       <div class="modal-actions"><button class="btn ghost" data-close="1">Cancel</button><button class="btn primary" id="af-save">Save</button></div>
     </div>`);
+  document.getElementById('af-split').addEventListener('click', ()=>{
+    const initial = (apps.length===1 && appFundShares(apps[0]).length>1) ? appFundShares(apps[0]).map(x=>({ fundId:x.fundId, amount:x.frac*total })) : [];   // only pre-fill an existing split
+    openSplitModal(total, initial, async (entries)=>{ await applyFundSplit(apps, entries, total); toast('Funding split saved'); render(); });
+  });
   document.getElementById('af-save').addEventListener('click', async ()=>{
     const pick = (document.querySelector('input[name="fund-pick"]:checked')||{}).value || '';
     const f = fundById(pick);
-    for(const a of apps){ a.fundId = pick; await idbPut('applications', a); }
+    for(const a of apps){ a.fundId = pick; a.fundSplit = []; await idbPut('applications', a); }
     for(const x of sales){ x.fundId = pick; x.mySharePct = f ? fundSharePct(f) : 100; await idbPut('sales', x); }
     closeModal(); toast(f ? `Linked to ${f.name}` : 'Fund cleared'); render();
   });
@@ -3355,8 +3454,8 @@ function openSaleModal(preselectId, editId){
     document.getElementById('s-com-label').textContent = who ? `Commission to give ${who} (₹, optional)` : 'Commission to give (₹, optional)';
     const rec = document.getElementById('s-received').value, inv = Number(document.getElementById('s-invest').value)||0, com = Number(document.getElementById('s-commission').value)||0;
     const share = Math.max(0, Math.min(100, Number(document.getElementById('s-share').value)));
-    const fnd = fundById(app && app.fundId);
-    document.getElementById('s-share-label').textContent = fnd ? `Your share of the profit (%) — ${fnd.name}${fnd.partner?`, ${fnd.partner} gets the rest`:''}` : 'Your share of the profit (%)';
+    const fnd = fundById(app && app.fundId), shs = appFundShares(app);
+    document.getElementById('s-share-label').textContent = shs.length>1 ? `Your share of the profit (%) — blended across ${shs.map(x=>fundById(x.fundId).name).join(' + ')}` : (fnd ? `Your share of the profit (%) — ${fnd.name}${fnd.partner?`, ${fnd.partner} gets the rest`:''}` : 'Your share of the profit (%)');
     const before = document.getElementById('s-before'), net = document.getElementById('s-net');
     if(rec===''){ before.textContent=''; net.textContent=''; return; }
     const p = (Number(rec)||0) - inv;
@@ -3364,10 +3463,10 @@ function openSaleModal(preselectId, editId){
     before.textContent = `Profit before commission: ${sign(p)}` + (inv>0 ? ` (${p>=0?'+':'−'}${Math.abs(p/inv*100).toFixed(1)}%)` : '');
     const n = p - com;
     net.style.color = n>=0 ? 'var(--green)' : 'var(--rust)';
-    const mine = n*share/100, other = n - mine, pname = (fnd && fnd.partner) || 'Partner';
+    const mine = n*share/100, other = n - mine, pname = ([...new Set(shs.map(x=>fundById(x.fundId)).filter(f=>f&&f.partner).map(f=>f.partner))].join(' / ')) || (fnd && fnd.partner) || 'Partner';
     net.textContent = (com>0 || share<100) ? (share<100 ? `After commission ${sign(n)} → You ${sign(mine)} · ${pname} ${sign(other)}` : `Your net profit: ${sign(n)}`) : '';
   };
-  const fill = (appId)=>{ const app = State.applications.find(a=>a.id===appId); if(app && !editing){ document.getElementById('s-invest').value = app.allottedAmount||''; const f = fundById(app.fundId); document.getElementById('s-share').value = f ? fundSharePct(f) : 100; } refresh(); };
+  const fill = (appId)=>{ const app = State.applications.find(a=>a.id===appId); if(app && !editing){ document.getElementById('s-invest').value = app.allottedAmount||''; const shs0 = appFundShares(app); document.getElementById('s-share').value = shs0.length ? Math.round(weightedSharePct(shs0)*100)/100 : 100; } refresh(); };
   if(startApp) fill(startApp); else refresh();
   document.getElementById('s-app').addEventListener('change',(e)=>fill(e.target.value));
   ['s-received','s-invest','s-commission','s-share'].forEach(id=>document.getElementById(id).addEventListener('input', refresh));
